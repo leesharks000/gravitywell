@@ -11,7 +11,7 @@ Flow: Capture → Compress → Anchor
 - Anchor: deposit to Zenodo as a versioned record with DOI
 """
 
-from fastapi import FastAPI, HTTPException, Depends, Header
+from fastapi import FastAPI, HTTPException, Depends, Header, Body
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel, Field
 from typing import Optional, List, Dict, Any, Literal
@@ -34,7 +34,7 @@ import httpx
 app = FastAPI(
     title="Gravity Well Protocol",
     description="Compression, wrapping, and anchoring microservice for durable provenance chains",
-    version="0.4.0"
+    version="0.4.1"
 )
 
 security = HTTPBearer(auto_error=False)
@@ -320,7 +320,7 @@ def validate_bootstrap_manifest(manifest: dict) -> list:
 
     # Verify constraint_hash matches constraints if both present
     if "constraints" in identity and "constraint_hash" in identity:
-        expected_hash = content_hash(json.dumps(identity["constraints"], sort_keys=True))
+        expected_hash = compute_constraint_hash(identity["constraints"])
         if identity["constraint_hash"] != expected_hash:
             errors.append(
                 f"identity.constraint_hash does not match sha256 of identity.constraints. "
@@ -337,8 +337,12 @@ def validate_bootstrap_manifest(manifest: dict) -> list:
 
 
 def compute_constraint_hash(constraints) -> str:
-    """Helper: compute the correct hash for a constraints block."""
-    return content_hash(json.dumps(constraints, sort_keys=True))
+    """Helper: compute the correct hash for a constraints block.
+    Uses compact separators (no spaces) for cross-language determinism.
+    Python json.dumps default uses spaces; JavaScript JSON.stringify does not.
+    Compact form is the canonical serialization.
+    """
+    return content_hash(json.dumps(constraints, sort_keys=True, separators=(',', ':')))
 
 
 def build_deposit_document(
@@ -372,7 +376,7 @@ def build_deposit_document(
 | Concept DOI | {chain.concept_doi or 'pending (first deposit)'} |
 | Objects | {len(objects)} |
 | Deposited | {timestamp} |
-| Protocol | Gravity Well v0.4.0 |
+| Protocol | Gravity Well v0.4.1 |
 
 ---
 """
@@ -380,7 +384,7 @@ def build_deposit_document(
     # Layer 1: Bootstrap manifest — the seed
     bootstrap_section = ""
     if bootstrap_manifest:
-        manifest_hash = content_hash(json.dumps(bootstrap_manifest, sort_keys=True))
+        manifest_hash = content_hash(json.dumps(bootstrap_manifest, sort_keys=True, separators=(',', ':')))
         bootstrap_section = f"""## Bootstrap Manifest
 
 Identity specification for agent reconstitution. A new instance applying this
@@ -514,7 +518,7 @@ async def zenodo_first_deposit(content: str, metadata: dict) -> dict:
             r.raise_for_status()
 
             # Set metadata
-            creators = metadata.get("creators", [{"name": "Gravity Well"}])
+            creators = metadata.get("creators", [{"name": "Sharks, Lee"}])
             r = await client.put(
                 f"https://zenodo.org/api/deposit/depositions/{dep_id}",
                 headers=headers,
@@ -592,7 +596,7 @@ async def zenodo_new_version(latest_record_id: str, content: str, metadata: dict
             r.raise_for_status()
 
             # Update metadata
-            creators = metadata.get("creators", [{"name": "Gravity Well"}])
+            creators = metadata.get("creators", [{"name": "Sharks, Lee"}])
             r = await client.put(
                 f"https://zenodo.org/api/deposit/depositions/{draft_id}",
                 headers=headers,
@@ -856,7 +860,7 @@ async def deposit(
     # Hash bootstrap manifest for drift detection
     bootstrap_hash = None
     if request.bootstrap_manifest:
-        bootstrap_hash = content_hash(json.dumps(request.bootstrap_manifest, sort_keys=True))
+        bootstrap_hash = content_hash(json.dumps(request.bootstrap_manifest, sort_keys=True, separators=(',', ':')))
 
     # Anchor to Zenodo
     deposit_title = request.deposit_metadata.get(
@@ -871,7 +875,7 @@ async def deposit(
         "description": deposit_desc,
         "filename": f"{chain.label.replace(' ', '_')}_v{version}.md",
         "keywords": ["gravity-well", "provenance", "continuity", chain.label],
-        "creators": request.deposit_metadata.get("creators", [{"name": "Gravity Well"}]),
+        "creators": request.deposit_metadata.get("creators", [{"name": "Sharks, Lee"}]),
     }
 
     if chain.latest_record_id:
@@ -994,7 +998,7 @@ async def detect_drift(
         DepositRecord.bootstrap_manifest.isnot(None)
     ).order_by(DepositRecord.version.desc()).first()
 
-    current_hash = content_hash(json.dumps(request.current_manifest, sort_keys=True))
+    current_hash = content_hash(json.dumps(request.current_manifest, sort_keys=True, separators=(',', ':')))
 
     if not latest or not latest.bootstrap_manifest:
         return DriftReport(
@@ -1005,7 +1009,7 @@ async def detect_drift(
         )
 
     archived_hash = latest.bootstrap_hash or content_hash(
-        json.dumps(latest.bootstrap_manifest, sort_keys=True)
+        json.dumps(latest.bootstrap_manifest, sort_keys=True, separators=(',', ':'))
     )
 
     # Field-level diff
@@ -1144,7 +1148,8 @@ async def bootstrap_schema():
                 },
                 "constraint_hash": {
                     "type": "string",
-                    "description": "SHA-256 hash of JSON-serialized constraints (sort_keys=True). "
+                    "description": "SHA-256 hash of JSON-serialized constraints "
+                                   "(sort_keys=True, separators=(',', ':') — compact, no spaces). "
                                    "Use /v1/util/constraint-hash to compute."
                 },
             }
@@ -1170,6 +1175,9 @@ async def bootstrap_schema():
         },
         "notes": [
             "identity.constraint_hash must match sha256 of identity.constraints.",
+            "Canonical serialization: json.dumps(constraints, sort_keys=True, separators=(',', ':')) — compact JSON, no spaces.",
+            "In JavaScript: compute sha256 of JSON.stringify with sorted keys, no spaces.",
+            "Use /v1/util/constraint-hash to compute the correct hash (returns canonical_serialization for debugging).",
             "Deposits with a bootstrap_manifest that fails validation will be rejected (422).",
             "The manifest is embedded in the Zenodo deposit document as fenced JSON for Gravity Well-independent reconstitution.",
         ]
@@ -1177,14 +1185,19 @@ async def bootstrap_schema():
 
 
 @app.post("/v1/util/constraint-hash")
-async def compute_constraint_hash_endpoint(constraints: Any):
+async def compute_constraint_hash_endpoint(constraints: Any = Body(...)):
     """
     Utility: compute the correct constraint_hash for a given constraints block.
-    POST the constraints (list or dict), get back the hash.
+    POST the constraints (list or dict) as the JSON body, get back the hash.
+
+    Canonical serialization: json.dumps(constraints, sort_keys=True, separators=(',', ':'))
+    (compact JSON, no spaces, sorted keys — cross-language deterministic)
     """
+    canonical = json.dumps(constraints, sort_keys=True, separators=(',', ':'))
     return {
-        "constraint_hash": compute_constraint_hash(constraints),
+        "constraint_hash": content_hash(canonical),
         "input_type": type(constraints).__name__,
+        "canonical_serialization": canonical,
     }
 
 
