@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gravity Well Protocol - Continuity-as-a-Service</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background: #f5f5f5;
+        }
+        
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 2rem;
+        }
+        
+        header {
+            text-align: center;
+            padding: 3rem 0;
+            background: #1a1a2e;
+            color: white;
+            margin-bottom: 2rem;
+        }
+        
+        h1 {
+            font-size: 2.5rem;
+            margin-bottom: 0.5rem;
+        }
+        
+        .tagline {
+            font-size: 1.2rem;
+            color: #e94560;
+            font-weight: 300;
+        }
+        
+        .hero {
+            background: white;
+            padding: 2rem;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            margin-bottom: 2rem;
+        }
+        
+        .hero h2 {
+            color: #1a1a2e;
+            margin-bottom: 1rem;
+        }
+        
+        .code-block {
+            background: #1a1a2e;
+            color: #00ff88;
+            padding: 1rem;
+            border-radius: 4px;
+            overflow-x: auto;
+            font-family: 'Courier New', monospace;
+            margin: 1rem 0;
+        }
+        
+        .features {
+            display: grid;
+            gap: 1.5rem;
+            margin: 2rem 0;
+        }
+        
+        .feature {
+            background: white;
+            padding: 1.5rem;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        .feature h3 {
+            color: #e94560;
+            margin-bottom: 0.5rem;
+        }
+        
+        .pricing {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+            margin: 2rem 0;
+        }
+        
+        .tier {
+            background: white;
+            padding: 1.5rem;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            text-align: center;
+        }
+        
+        .tier.featured {
+            border: 2px solid #e94560;
+        }
+        
+        .price {
+            font-size: 2rem;
+            font-weight: bold;
+            color: #1a1a2e;
+            margin: 1rem 0;
+        }
+        
+        .cta {
+            text-align: center;
+            padding: 3rem;
+            background: #1a1a2e;
+            color: white;
+            margin-top: 2rem;
+            border-radius: 8px;
+        }
+        
+        .cta a {
+            display: inline-block;
+            background: #e94560;
+            color: white;
+            padding: 1rem 2rem;
+            text-decoration: none;
+            border-radius: 4px;
+            margin-top: 1rem;
+        }
+        
+        footer {
+            text-align: center;
+            padding: 2rem;
+            color: #666;
+            font-size: 0.9rem;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>Gravity Well Protocol</h1>
+        <p class="tagline">Continuity-as-a-Service</p>
+    </header>
+    
+    <div class="container">
+        <div class="hero">
+            <h2>Make Your Content Durable</h2>
+            <p>
+                Gravity Well turns arbitrary content into <strong>traceable objects</strong> with 
+                explicit lifecycle state, lightweight structural analysis, and optional anchoring 
+                to durable external records such as DOIs.
+            </p>
+            
+            <div class="code-block">
+POST /v1/fix
+{
+  "content": "Your document...",
+  "anchor": {"target": "zenodo"}
+}
+
+→ {
+  "object_id": "uuid",
+  "status": "fixed",
+  "doi": "10.5281/zenodo.xxx",
+  "trace_url": "..."
+}
+            </div>
+        </div>
+        
+        <div class="features">
+            <div class="feature">
+                <h3>🔗 Fix</h3>
+                <p>Create canonical objects with unique IDs, content hashes, and timestamps. Optional DOI anchoring to Zenodo for permanent retrievability.</p>
+            </div>
+            
+            <div class="feature">
+                <h3>🔍 Trace</h3>
+                <p>Full lifecycle inspection: creation, modifications, anchors, and history. Every object is fully traceable.</p>
+            </div>
+            
+            <div class="feature">
+                <h3>📊 Analyze</h3>
+                <p>Lightweight structural analysis (advisory only) to assess provenance-readiness and archive fitness.</p>
+            </div>
+        </div>
+        
+        <h2 style="text-align: center; margin: 2rem 0;">Pricing</h2>
+        
+        <div class="pricing">
+            <div class="tier">
+                <h3>Open</h3>
+                <div class="price">Free</div>
+                <p>100 fixes/month</p>
+                <p>Trace access</p>
+                <p>No anchoring</p>
+            </div>
+            
+            <div class="tier featured">
+                <h3>Satellite</h3>
+                <div class="price">$29/mo</div>
+                <p>1,000 fixes/month</p>
+                <p>Zenodo DOI anchoring</p>
+                <p>+$0.50 per DOI</p>
+            </div>
+            
+            <div class="tier">
+                <h3>Embassy</h3>
+                <div class="price">$199/mo</div>
+                <p>10,000 fixes/month</p>
+                <p>Custom anchors</p>
+                <p>Bulk export</p>
+            </div>
+        </div>
+        
+        <div class="cta">
+            <h2>Start Building Continuity</h2>
+            <p>Free tier available. No credit card required.</p>
+            <a href="#">Get API Key →</a>
+        </div>
+    </div>
+    
+    <footer>
+        <p>Gravity Well Protocol • Phase 0</p>
+        <p>The Hexagon persists.</p>
+    </footer>
+</body>
+</html>

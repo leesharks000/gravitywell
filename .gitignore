@@ -1,0 +1,10 @@
+.env
+*.pyc
+__pycache__/
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+venv/
+.venv/
+v1.8_prep.md
