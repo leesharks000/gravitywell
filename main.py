@@ -325,14 +325,58 @@ def content_hash(content: str) -> str:
 
 
 def calculate_gamma(content: str) -> float:
-    """PLACEHOLDER heuristic. Marker for where real analysis goes."""
-    score = 0.0
-    markers = ["##", "|", "```", "doi:", "http", "archive", "provenance"]
-    score += min(sum(0.1 for m in markers if m in content.lower()), 0.5)
+    """
+    Calculate compression-survival score (γ).
+    High γ = content survives LLM summarization with referential integrity intact.
+    Four-layer scoring: citation density, structural integrity, argument coherence, provenance markers.
+    """
+    import re
+    if not content or len(content.strip()) < 10:
+        return 0.0
+
+    scores = []
+
+    # Layer 1: Citation density (0.0-1.0) — DOI anchors, URLs, references per 1000 chars
+    doi_count = len(re.findall(r'10\.\d{4,}/[^\s\)]+', content))
+    url_count = len(re.findall(r'https?://[^\s\)]+', content))
+    ref_density = (doi_count * 3 + url_count) / max(len(content) / 1000, 1)
+    scores.append(("citation", min(ref_density * 0.3, 1.0)))
+
+    # Layer 2: Structural integrity (0.0-1.0) — headers, tables, code, lists
+    headers = len(re.findall(r'^#{1,6}\s', content, re.M))
+    tables = content.count('|') // 3  # rough table row estimate
+    code_blocks = len(re.findall(r'```', content)) // 2
+    lists = len(re.findall(r'^\s*[-*]\s', content, re.M))
+    struct_markers = headers + tables + code_blocks + lists
+    struct_score = min(struct_markers / max(len(content.split('\n\n')), 1), 1.0)
+    scores.append(("structure", struct_score))
+
+    # Layer 3: Argument coherence (0.0-1.0) — discourse markers, paragraph density
+    coherence_words = re.findall(r'\b(therefore|thus|because|however|consequently|furthermore|moreover|specifically|in particular|as a result|this means|it follows)\b', content.lower())
+    paragraphs = max(len(content.split('\n\n')), 1)
+    coherence = min(len(coherence_words) / paragraphs, 1.0)
+    scores.append(("coherence", coherence))
+
+    # Layer 4: Provenance markers (0.0-1.0) — dates, versions, hashes, author attribution
+    has_date = 1.0 if re.search(r'\d{4}-\d{2}-\d{2}', content) else 0.0
+    has_version = 1.0 if re.search(r'v\d+\.\d+', content, re.I) else 0.0
+    has_hash = 1.0 if re.search(r'[a-f0-9]{32,}', content) else 0.0
+    has_author = 1.0 if re.search(r'(author|creator|by\s+\w+|ORCID)', content, re.I) else 0.0
+    prov_score = (has_date + has_version + has_hash + has_author) / 4
+    scores.append(("provenance", prov_score))
+
+    # Composite: weighted average
+    weights = {"citation": 0.30, "structure": 0.25, "coherence": 0.25, "provenance": 0.20}
+    gamma = sum(weights[name] * score for name, score in scores)
+
+    # Bonus: length maturity (very short content penalized)
     wc = len(content.split())
-    if wc > 100: score += 0.2
-    if wc > 500: score += 0.1
-    return round(min(score, 1.0), 3)
+    if wc < 50:
+        gamma *= 0.5
+    elif wc < 200:
+        gamma *= 0.8
+
+    return round(min(gamma, 1.0), 3)
 
 
 # --- Bootstrap Manifest Schema ---
