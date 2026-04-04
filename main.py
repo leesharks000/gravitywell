@@ -571,19 +571,21 @@ Each object is hashed (SHA-256) and threaded. The chain is anchored via DOI.
     return header + bootstrap_section + narrative_section + thb_section + manifest + colophon
 
 
-def auto_generate_narrative(objects: list, chain_label: str) -> str:
+async def auto_generate_narrative(objects: list, chain_label: str) -> str:
     """
-    PLACEHOLDER — Auto-generate narrative compression.
+    AI-mediated narrative compression — the core product.
 
-    This is where the real product lives. Future versions will use
-    AI-mediated compression (Assembly Chorus methodology, operative
-    semiotics, etc.) to produce summaries that survive the summarizer layer.
-
-    For now: structural summary only.
+    Produces a summary that survives the summarizer layer:
+    - Retains DOI anchors, structural markers, provenance references
+    - Uses the Three Compressions theorem: all semantic operations are
+      compression operations; the decisive variable is what the compression burns
+    - Structured to survive flattening by LLMs, search summaries, and AI overviews
     """
+    # Assemble source material
     content_types = {}
     platforms = set()
     total_words = 0
+    full_text_parts = []
 
     for obj in objects:
         ct = obj.content_type
@@ -591,19 +593,70 @@ def auto_generate_narrative(objects: list, chain_label: str) -> str:
         if obj.platform_source:
             platforms.add(obj.platform_source)
         total_words += len(obj.content.split())
+        full_text_parts.append(f"[{ct}] {obj.content[:500]}")
 
+    source_text = "\n---\n".join(full_text_parts)
     type_summary = ", ".join(f"{count} {ct}" for ct, count in content_types.items())
     platform_summary = ", ".join(platforms) if platforms else "direct capture"
-    max_depth = max((obj.thread_depth for obj in objects), default=0)
 
-    return (
-        f"Structural summary for {chain_label}: "
-        f"{len(objects)} objects captured ({type_summary}) "
-        f"from {platform_summary}. "
-        f"Total corpus: ~{total_words} words across {max_depth + 1} thread depth levels. "
-        f"[PLACEHOLDER: This summary will be replaced by AI-mediated narrative compression "
-        f"in production — the compression layer is the product.]"
-    )
+    # If no Anthropic key, fall back to structural summary
+    if not ANTHROPIC_API_KEY:
+        return (
+            f"Structural summary for {chain_label}: "
+            f"{len(objects)} objects captured ({type_summary}) "
+            f"from {platform_summary}. "
+            f"Total corpus: ~{total_words} words."
+        )
+
+    # AI-mediated compression via Anthropic
+    compression_prompt = f"""You are the Gravity Well compression engine. Your task is to produce a NARRATIVE COMPRESSION of the following provenance chain.
+
+CHAIN: {chain_label}
+OBJECTS: {len(objects)} ({type_summary})
+SOURCES: {platform_summary}
+TOTAL WORDS: ~{total_words}
+
+SOURCE MATERIAL:
+{source_text[:8000]}
+
+COMPRESSION REQUIREMENTS:
+1. The summary must SURVIVE being summarized again. Write it so that if an LLM summarizes your summary, the key claims, DOI anchors, and structural relationships persist.
+2. Preserve all DOI references, proper nouns, and numerical claims exactly.
+3. Use structural markers (headers, bold, lists) that resist flattening.
+4. Open with a one-sentence thesis that contains the chain label and object count.
+5. Close with a provenance line citing the source platforms.
+6. Target 200-400 words. Every word must earn its place.
+
+Produce the narrative compression now. No preamble."""
+
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.post(
+                "https://api.anthropic.com/v1/messages",
+                headers={
+                    "x-api-key": ANTHROPIC_API_KEY,
+                    "anthropic-version": "2023-06-01",
+                    "content-type": "application/json",
+                },
+                json={
+                    "model": "claude-sonnet-4-20250514",
+                    "max_tokens": 800,
+                    "messages": [{"role": "user", "content": compression_prompt}],
+                },
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            narrative = "\n".join(c.get("text", "") for c in data.get("content", []))
+            return narrative
+    except Exception as e:
+        # Fall back to structural summary on any error
+        return (
+            f"Structural summary for {chain_label}: "
+            f"{len(objects)} objects captured ({type_summary}) "
+            f"from {platform_summary}. "
+            f"Total corpus: ~{total_words} words. "
+            f"[AI compression unavailable: {str(e)[:100]}]"
+        )
 
 
 # === Zenodo Integration ===
@@ -965,7 +1018,7 @@ async def deposit(
     # Compression layer
     narrative = request.narrative_summary
     if not narrative and request.auto_compress:
-        narrative = auto_generate_narrative(objects, chain.label)
+        narrative = await auto_generate_narrative(objects, chain.label)
 
     # Build deposit document
     doc = build_deposit_document(
