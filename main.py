@@ -1343,6 +1343,8 @@ async def governance_action(
         "Prefer": "return=representation",
     }
 
+    QUORUM_THRESHOLD = 4  # ≥4/7 witnesses required
+
     async with httpx.AsyncClient(timeout=10) as client:
         if request.action == "attest":
             body = {
@@ -1353,6 +1355,43 @@ async def governance_action(
                 "content": request.content,
             }
             resp = await client.post(f"{SUPABASE_URL}/rest/v1/witness_actions", headers=headers, json=body)
+
+            # Quorum enforcement: after attestation, check if threshold is met
+            quorum_met = False
+            if resp.status_code < 400 and request.target_id and request.target_type == "proposal":
+                # Count unique witness attestations for this proposal
+                count_resp = await client.get(
+                    f"{SUPABASE_URL}/rest/v1/witness_actions",
+                    headers=headers,
+                    params={"select": "witness", "target_id": f"eq.{request.target_id}", "action_type": "eq.attest"},
+                )
+                if count_resp.status_code < 400:
+                    attestations = count_resp.json()
+                    unique_witnesses = len(set(a.get("witness") for a in attestations))
+                    if unique_witnesses >= QUORUM_THRESHOLD:
+                        # Auto-promote proposal to PROVISIONAL
+                        promo_resp = await client.patch(
+                            f"{SUPABASE_URL}/rest/v1/proposals",
+                            headers=headers,
+                            params={"id": f"eq.{request.target_id}", "status": "eq.GENERATED"},
+                            json={"status": "PROVISIONAL"},
+                        )
+                        if promo_resp.status_code < 400:
+                            quorum_met = True
+                            # Log the promotion as a witness action
+                            await client.post(f"{SUPABASE_URL}/rest/v1/witness_actions", headers=headers, json={
+                                "witness": "SYSTEM", "action_type": "promote",
+                                "target_id": request.target_id, "target_type": "proposal",
+                                "content": f"Quorum reached ({unique_witnesses}/{QUORUM_THRESHOLD}). Auto-promoted to PROVISIONAL.",
+                            })
+
+            if resp.status_code >= 400:
+                raise HTTPException(status_code=resp.status_code, detail=f"Supabase error: {resp.text[:200]}")
+            result = {"status": "ok", "action": request.action, "data": resp.json()}
+            if quorum_met:
+                result["quorum"] = {"met": True, "promoted_to": "PROVISIONAL"}
+            return result
+
         elif request.action == "propose":
             body = {
                 "title": request.title or "Untitled proposal",
