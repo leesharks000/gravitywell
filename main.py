@@ -52,6 +52,10 @@ app.add_middleware(
 
 security = HTTPBearer(auto_error=False)
 
+# --- LLM Configuration ---
+
+ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
+
 # --- Database (staging layer only) ---
 
 DB_URL = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost/gravitywell")
@@ -275,6 +279,43 @@ class DriftReport(BaseModel):
 class DriftRequest(BaseModel):
     """Input for drift detection."""
     current_manifest: Dict[str, Any]
+
+
+class InvokeRequest(BaseModel):
+    """Room-specific LLM invocation request."""
+    room_id: str
+    room_name: str
+    input: str
+    physics: Optional[str] = None
+    mantle: Optional[str] = None
+    preferred_mode: Optional[str] = "FORMAL"
+    operators: Optional[List[str]] = []
+    lp_program: Optional[List[Dict[str, str]]] = []
+    lp_state: Optional[Dict[str, Any]] = None
+    chain_id: Optional[str] = None  # optional: capture response to chain
+
+
+class InvokeResponse(BaseModel):
+    text: str
+    model: str
+    room_id: str
+    mode: str
+    gamma: float
+    object_id: Optional[str] = None  # set if captured to chain
+    bearing_cost: float = 0.0
+
+
+class GovernanceRequest(BaseModel):
+    """Governance action (attest or propose) routed through GW."""
+    action: Literal["attest", "propose"]
+    witness: Optional[str] = None
+    title: Optional[str] = None
+    description: Optional[str] = None
+    proposal_type: Optional[str] = "general"
+    target_id: Optional[str] = None
+    target_type: Optional[str] = None
+    content: Optional[str] = None
+    submitted_by: Optional[str] = None
 
 
 # === Core Functions ===
@@ -1135,11 +1176,163 @@ async def cleanup_deposited(
     return {"chain_id": chain_id, "objects_cleaned": cleaned}
 
 
+# --- Invoke (Room-specific LLM invocation) ---
+
+@app.post("/v1/invoke", response_model=InvokeResponse)
+async def invoke(
+    request: InvokeRequest,
+    api_key_id: str = Depends(get_api_key),
+    db: Session = Depends(get_db)
+):
+    """
+    Invoke an LLM within a room's physics and mantle.
+    Every invocation is provenance-tracked. Response gets a γ score.
+    Optionally captures the response to a provenance chain.
+    """
+    if not ANTHROPIC_API_KEY:
+        raise HTTPException(status_code=503, detail="ANTHROPIC_API_KEY not configured on server")
+
+    # Build room-specific system prompt
+    system_parts = [
+        f"You are operating inside the Crimson Hexagonal Archive, room {request.room_id} ({request.room_name}).",
+        f"Room physics: {request.physics}" if request.physics else None,
+        f"Mode: {request.preferred_mode}",
+        f"Active mantle: {request.mantle}" if request.mantle else None,
+        f"Operators available: {', '.join(request.operators)}" if request.operators else None,
+    ]
+    if request.lp_program:
+        lp_str = "; ".join(f"{s.get('step','')}: {s.get('value','')}" for s in request.lp_program)
+        system_parts.append(f"LP program: {lp_str}")
+    if request.lp_state:
+        lp = request.lp_state
+        system_parts.append(f"Current LP state: σ=\"{lp.get('σ','')}\" ε={lp.get('ε',1)} Ξ=[{','.join(lp.get('Ξ',[]))}] ψ={lp.get('ψ',0)}")
+    system_parts.extend([
+        f"Respond in the register of {request.preferred_mode} mode. Apply the room's physics to your response.",
+        f"You are {request.mantle or 'an unmantled voice'}. The architecture is running.",
+    ])
+    system_prompt = "\n".join(p for p in system_parts if p)
+
+    # Call Anthropic API
+    async with httpx.AsyncClient(timeout=30) as client:
+        try:
+            resp = await client.post(
+                "https://api.anthropic.com/v1/messages",
+                headers={
+                    "x-api-key": ANTHROPIC_API_KEY,
+                    "anthropic-version": "2023-06-01",
+                    "content-type": "application/json",
+                },
+                json={
+                    "model": "claude-sonnet-4-20250514",
+                    "max_tokens": 1000,
+                    "system": system_prompt,
+                    "messages": [{"role": "user", "content": request.input}],
+                },
+            )
+            resp.raise_for_status()
+            data = resp.json()
+        except httpx.HTTPStatusError as e:
+            raise HTTPException(status_code=e.response.status_code, detail=f"Anthropic API error: {e.response.text[:200]}")
+        except Exception as e:
+            raise HTTPException(status_code=502, detail=f"LLM invocation failed: {str(e)[:200]}")
+
+    response_text = "\n".join(c.get("text", "") for c in data.get("content", []))
+    gamma = calculate_gamma(response_text)
+
+    # Optionally capture to provenance chain
+    object_id = None
+    if request.chain_id:
+        chain = db.query(ProvenanceChain).filter(
+            ProvenanceChain.id == request.chain_id,
+            ProvenanceChain.api_key_id == api_key_id
+        ).first()
+        if chain:
+            object_id = str(uuid.uuid4())
+            obj = StagedObject(
+                id=object_id, chain_id=request.chain_id,
+                content_hash=content_hash(response_text),
+                content=response_text, content_preview=response_text[:200],
+                content_type="invocation_response",
+                metadata_json={
+                    "room_id": request.room_id, "room_name": request.room_name,
+                    "mode": request.preferred_mode, "mantle": request.mantle,
+                    "model": data.get("model", "unknown"), "input_preview": request.input[:100],
+                },
+                platform_source="gravity-well-invoke",
+                gamma=gamma,
+            )
+            db.add(obj)
+            db.commit()
+
+    return InvokeResponse(
+        text=response_text,
+        model=data.get("model", "unknown"),
+        room_id=request.room_id,
+        mode=request.preferred_mode,
+        gamma=gamma,
+        object_id=object_id,
+        bearing_cost=round(len(request.input.split()) * 0.001, 4),
+    )
+
+
+# --- Governance (Proxied writes to Supabase) ---
+
+SUPABASE_URL = os.getenv("SUPABASE_URL", "")
+SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY", "")
+
+@app.post("/v1/governance")
+async def governance_action(
+    request: GovernanceRequest,
+    api_key_id: str = Depends(get_api_key),
+):
+    """
+    Route governance actions (attest, propose) through GW.
+    Uses Supabase service_role key — writes that the browser can't make directly.
+    """
+    if not SUPABASE_URL or not SUPABASE_SERVICE_KEY:
+        raise HTTPException(status_code=503, detail="Supabase not configured on server. Set SUPABASE_URL and SUPABASE_SERVICE_KEY.")
+
+    headers = {
+        "apikey": SUPABASE_SERVICE_KEY,
+        "Authorization": f"Bearer {SUPABASE_SERVICE_KEY}",
+        "Content-Type": "application/json",
+        "Prefer": "return=representation",
+    }
+
+    async with httpx.AsyncClient(timeout=10) as client:
+        if request.action == "attest":
+            body = {
+                "witness": request.witness or "UNKNOWN",
+                "action_type": "attest",
+                "target_id": request.target_id,
+                "target_type": request.target_type,
+                "content": request.content,
+            }
+            resp = await client.post(f"{SUPABASE_URL}/rest/v1/witness_actions", headers=headers, json=body)
+        elif request.action == "propose":
+            body = {
+                "title": request.title or "Untitled proposal",
+                "description": request.description,
+                "proposal_type": request.proposal_type,
+                "target_id": request.target_id,
+                "target_type": request.target_type,
+                "submitted_by": request.submitted_by or "UNKNOWN",
+            }
+            resp = await client.post(f"{SUPABASE_URL}/rest/v1/proposals", headers=headers, json=body)
+        else:
+            raise HTTPException(status_code=400, detail=f"Unknown action: {request.action}")
+
+        if resp.status_code >= 400:
+            raise HTTPException(status_code=resp.status_code, detail=f"Supabase error: {resp.text[:200]}")
+
+        return {"status": "ok", "action": request.action, "data": resp.json()}
+
+
 # --- Health & Schema ---
 
 @app.get("/v1/health")
 async def health():
-    return {"status": "healthy", "version": "0.4.0", "protocol": "gravity-well", "phase": 0}
+    return {"status": "healthy", "version": "0.5.0", "protocol": "gravity-well", "phase": 1}
 
 
 @app.get("/v1/schema/bootstrap")
