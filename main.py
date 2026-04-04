@@ -344,7 +344,7 @@ def content_hash(content: str) -> str:
     return hashlib.sha256(content.encode()).hexdigest()
 
 
-def calculate_gamma(content: str) -> float:
+def calculate_gamma(content: str, return_detail: bool = False):
     """
     Calculate compression-survival score (γ).
     High γ = content survives LLM summarization with referential integrity intact.
@@ -352,51 +352,60 @@ def calculate_gamma(content: str) -> float:
     """
     import re
     if not content or len(content.strip()) < 10:
+        if return_detail:
+            return {"gamma": 0.0, "subscores": {}, "penalty": "content too short"}
         return 0.0
 
-    scores = []
+    subscores = {}
 
-    # Layer 1: Citation density (0.0-1.0) — DOI anchors, URLs, references per 1000 chars
+    # Layer 1: Citation density (0.0-1.0)
     doi_count = len(re.findall(r'10\.\d{4,}/[^\s\)]+', content))
     url_count = len(re.findall(r'https?://[^\s\)]+', content))
     ref_density = (doi_count * 3 + url_count) / max(len(content) / 1000, 1)
-    scores.append(("citation", min(ref_density * 0.3, 1.0)))
+    subscores["citation"] = round(min(ref_density * 0.3, 1.0), 3)
 
-    # Layer 2: Structural integrity (0.0-1.0) — headers, tables, code, lists
+    # Layer 2: Structural integrity (0.0-1.0)
     headers = len(re.findall(r'^#{1,6}\s', content, re.M))
-    tables = content.count('|') // 3  # rough table row estimate
+    tables = content.count('|') // 3
     code_blocks = len(re.findall(r'```', content)) // 2
     lists = len(re.findall(r'^\s*[-*]\s', content, re.M))
     struct_markers = headers + tables + code_blocks + lists
-    struct_score = min(struct_markers / max(len(content.split('\n\n')), 1), 1.0)
-    scores.append(("structure", struct_score))
+    subscores["structure"] = round(min(struct_markers / max(len(content.split('\n\n')), 1), 1.0), 3)
 
-    # Layer 3: Argument coherence (0.0-1.0) — discourse markers, paragraph density
+    # Layer 3: Argument coherence (0.0-1.0)
     coherence_words = re.findall(r'\b(therefore|thus|because|however|consequently|furthermore|moreover|specifically|in particular|as a result|this means|it follows)\b', content.lower())
     paragraphs = max(len(content.split('\n\n')), 1)
-    coherence = min(len(coherence_words) / paragraphs, 1.0)
-    scores.append(("coherence", coherence))
+    subscores["coherence"] = round(min(len(coherence_words) / paragraphs, 1.0), 3)
 
-    # Layer 4: Provenance markers (0.0-1.0) — dates, versions, hashes, author attribution
-    has_date = 1.0 if re.search(r'\d{4}-\d{2}-\d{2}', content) else 0.0
-    has_version = 1.0 if re.search(r'v\d+\.\d+', content, re.I) else 0.0
-    has_hash = 1.0 if re.search(r'[a-f0-9]{32,}', content) else 0.0
-    has_author = 1.0 if re.search(r'(author|creator|by\s+\w+|ORCID)', content, re.I) else 0.0
-    prov_score = (has_date + has_version + has_hash + has_author) / 4
-    scores.append(("provenance", prov_score))
+    # Layer 4: Provenance markers (0.0-1.0)
+    has_date = 1.0 if re.search(r'\d{4}-\d{2}-\d{2}|\b20[12]\d\b', content) else 0.0
+    has_version = 1.0 if re.search(r'v\d+\.\d+|version\s+\d', content, re.I) else 0.0
+    has_hash = 1.0 if re.search(r'[a-f0-9]{16,}', content) else 0.0
+    has_author = 1.0 if re.search(r'(author|creator|by\s+\w+|ORCID|©)', content, re.I) else 0.0
+    subscores["provenance"] = round((has_date + has_version + has_hash + has_author) / 4, 3)
 
     # Composite: weighted average
     weights = {"citation": 0.30, "structure": 0.25, "coherence": 0.25, "provenance": 0.20}
-    gamma = sum(weights[name] * score for name, score in scores)
+    gamma = sum(weights[name] * score for name, score in subscores.items())
 
-    # Bonus: length maturity (very short content penalized)
+    # Softer length penalties
     wc = len(content.split())
-    if wc < 50:
-        gamma *= 0.5
+    penalty = None
+    if wc < 20:
+        gamma *= 0.4
+        penalty = f"very short ({wc} words)"
+    elif wc < 50:
+        gamma *= 0.7
+        penalty = f"short ({wc} words)"
     elif wc < 200:
-        gamma *= 0.8
+        gamma *= 0.9
+        penalty = f"moderate ({wc} words)"
 
-    return round(min(gamma, 1.0), 3)
+    gamma = round(min(gamma, 1.0), 3)
+
+    if return_detail:
+        return {"gamma": gamma, "subscores": subscores, "word_count": wc, "penalty": penalty}
+    return gamma
 
 
 # --- Bootstrap Manifest Schema ---
@@ -1868,16 +1877,16 @@ async def public_gamma(content: str = Body(..., embed=True)):
     if not content or len(content.strip()) < 10:
         return {"gamma": 0.0, "error": "Content too short (minimum 10 characters)"}
 
-    gamma = calculate_gamma(content)
-    wc = len(content.split())
+    detail = calculate_gamma(content, return_detail=True)
 
     return {
-        "gamma": gamma,
-        "word_count": wc,
-        "survival_tier": "critical" if gamma > 0.7 else "high" if gamma > 0.5 else "medium" if gamma > 0.3 else "low",
-        "recommendation": "Content is compression-survivable" if gamma > 0.5 else "Consider adding structural markers, citations, and provenance references",
+        "gamma": detail["gamma"],
+        "subscores": detail["subscores"],
+        "word_count": detail["word_count"],
+        "penalty": detail["penalty"],
+        "survival_tier": "critical" if detail["gamma"] > 0.7 else "high" if detail["gamma"] > 0.5 else "medium" if detail["gamma"] > 0.3 else "low",
+        "recommendation": "Content is compression-survivable" if detail["gamma"] > 0.5 else "Consider adding structural markers, citations, and provenance references",
         "protocol": "gravity-well",
-        "note": "Full compression analysis with AI-mediated scoring available with API key via /v1/invoke",
     }
 
 
