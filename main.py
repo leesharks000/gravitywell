@@ -1570,14 +1570,17 @@ async def cleanup_deposited(
 async def invoke(
     request: InvokeRequest,
     api_key_id: str = Depends(get_api_key),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    user_anthropic_key: Optional[str] = Header(None, alias="X-Anthropic-Key"),
 ):
     """
     Invoke an LLM within a room's physics and mantle.
     Every invocation is provenance-tracked. Response gets a γ score.
     Optionally captures the response to a provenance chain.
+    Supports BYOK: pass X-Anthropic-Key header to use your own API key.
     """
-    if not ANTHROPIC_API_KEY:
+    anthropic_key = user_anthropic_key or ANTHROPIC_API_KEY
+    if not anthropic_key:
         raise HTTPException(status_code=503, detail="ANTHROPIC_API_KEY not configured on server")
 
     # Build room-specific system prompt
@@ -1606,7 +1609,7 @@ async def invoke(
             resp = await client.post(
                 "https://api.anthropic.com/v1/messages",
                 headers={
-                    "x-api-key": ANTHROPIC_API_KEY,
+                    "x-api-key": anthropic_key,
                     "anthropic-version": "2023-06-01",
                     "content-type": "application/json",
                 },
