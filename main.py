@@ -1549,6 +1549,109 @@ async def governance_action(
         return {"status": "ok", "action": request.action, "data": resp.json()}
 
 
+# --- Continuity Console ---
+
+@app.get("/v1/console/{chain_id}")
+async def continuity_console(
+    chain_id: str,
+    api_key_id: str = Depends(get_api_key),
+    db: Session = Depends(get_db)
+):
+    """
+    The visibility surface. Answers five questions at a glance:
+    1. What is the canonical current state?
+    2. What was deposited, when, by whom?
+    3. Can I restart safely?
+    4. Has it drifted?
+    5. What evidence anchors this?
+    """
+    chain = db.query(ProvenanceChain).filter(
+        ProvenanceChain.id == chain_id, ProvenanceChain.api_key_id == api_key_id
+    ).first()
+    if not chain:
+        raise HTTPException(status_code=404, detail="Chain not found.")
+
+    # Staged objects
+    staged = db.query(StagedObject).filter(
+        StagedObject.chain_id == chain_id, StagedObject.deposited == "false"
+    ).order_by(StagedObject.captured_at.desc()).all()
+
+    # Deposit history
+    deposits = db.query(DepositRecord).filter(
+        DepositRecord.chain_id == chain_id
+    ).order_by(DepositRecord.version.desc()).all()
+
+    latest_deposit = deposits[0] if deposits else None
+
+    # Recoverability score
+    has_bootstrap = bool(latest_deposit and latest_deposit.bootstrap_manifest)
+    has_narrative = bool(latest_deposit and latest_deposit.narrative_summary)
+    has_tether = bool(latest_deposit and latest_deposit.tether_handoff_block)
+    has_doi = bool(chain.concept_doi)
+    recoverability = sum([has_bootstrap, has_narrative, has_tether, has_doi]) / 4
+
+    # Average gamma across staged objects
+    gammas = [o.gamma for o in staged if o.gamma]
+    avg_gamma = round(sum(gammas) / len(gammas), 3) if gammas else 0
+
+    # Total evidence
+    all_objects = db.query(StagedObject).filter(StagedObject.chain_id == chain_id).count()
+    total_words = sum(len(o.content.split()) for o in staged if o.content)
+
+    return {
+        "chain_id": chain_id,
+        "label": chain.label,
+
+        # Q1: Current state
+        "current_state": {
+            "concept_doi": chain.concept_doi,
+            "latest_version": chain.latest_version,
+            "staged_count": len(staged),
+            "total_objects": all_objects,
+            "total_words": total_words,
+            "avg_gamma": avg_gamma,
+        },
+
+        # Q2: Deposit history
+        "deposits": [
+            {
+                "version": d.version,
+                "doi": d.doi,
+                "object_count": d.object_count,
+                "deposited_at": d.deposited_at.isoformat() if d.deposited_at else None,
+                "has_bootstrap": bool(d.bootstrap_manifest),
+                "has_narrative": bool(d.narrative_summary),
+                "has_tether": bool(d.tether_handoff_block),
+            }
+            for d in deposits[:10]
+        ],
+
+        # Q3: Recoverability
+        "recoverability": {
+            "score": round(recoverability, 2),
+            "tier": "full" if recoverability == 1 else "partial" if recoverability >= 0.5 else "minimal" if recoverability > 0 else "none",
+            "layers": {
+                "bootstrap": has_bootstrap,
+                "tether": has_tether,
+                "narrative": has_narrative,
+                "provenance": has_doi,
+            },
+        },
+
+        # Q4: Drift status (requires separate call with manifest)
+        "drift_status": "Call POST /v1/drift/{chain_id} with current_manifest to check",
+
+        # Q5: Evidence summary
+        "evidence": {
+            "total_objects": all_objects,
+            "staged_pending": len(staged),
+            "deposited_versions": len(deposits),
+            "concept_doi": chain.concept_doi,
+            "latest_doi": latest_deposit.doi if latest_deposit else None,
+        },
+    }
+
+
 # --- Public Gamma Scoring (no auth required) ---
 
 @app.post("/v1/gamma")
