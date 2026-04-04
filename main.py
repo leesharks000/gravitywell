@@ -24,7 +24,7 @@ import json
 import secrets
 import textwrap
 
-from sqlalchemy import create_engine, Column, String, DateTime, Float, JSON, Text, Integer, Boolean
+from sqlalchemy import create_engine, Column, String, DateTime, Float, JSON, Text, Integer, Boolean, text
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session
 
@@ -146,6 +146,14 @@ class DepositRecord(Base):
 
 
 Base.metadata.create_all(bind=engine)
+
+# Auto-migrate: add zenodo_token column if missing (added in v0.5.0)
+try:
+    with engine.connect() as conn:
+        conn.execute(text("ALTER TABLE api_keys ADD COLUMN zenodo_token TEXT"))
+        conn.commit()
+except Exception:
+    pass  # Column already exists
 
 
 # === Dependencies ===
