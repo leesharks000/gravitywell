@@ -284,13 +284,16 @@ class ReconstitutionResponse(BaseModel):
 
 
 class DriftReport(BaseModel):
-    """Output of drift detection comparison."""
+    """Output of drift detection comparison — human-readable + machine-parseable."""
     chain_id: str
     current_hash: str
     archived_hash: Optional[str]
     match: bool
     drift_fields: List[str]  # which fields changed
     archived_version: Optional[int]
+    severity: str = "none"  # none | low | medium | high | critical
+    narrative: Optional[str] = None  # human-readable drift report
+    field_details: Optional[List[Dict[str, Any]]] = None  # per-field change details
 
 
 class DriftRequest(BaseModel):
@@ -1185,22 +1188,75 @@ async def detect_drift(
         json.dumps(latest.bootstrap_manifest, sort_keys=True, separators=(',', ':'))
     )
 
-    # Field-level diff
+    # Field-level diff with details
     drift_fields = []
+    field_details = []
     archived = latest.bootstrap_manifest
     all_keys = set(list(request.current_manifest.keys()) + list(archived.keys()))
+
+    # Classify fields by criticality
+    critical_fields = {"identity", "constraints", "constraint_hash", "name"}
+    high_fields = {"description", "psychic_voltage", "shadow_references"}
+
     for key in sorted(all_keys):
         current_val = request.current_manifest.get(key)
         archived_val = archived.get(key)
         if current_val != archived_val:
             drift_fields.append(key)
+            detail = {"field": key, "changed": True}
+            if key in critical_fields:
+                detail["severity"] = "critical"
+            elif key in high_fields:
+                detail["severity"] = "high"
+            else:
+                detail["severity"] = "low"
+
+            if archived_val is None:
+                detail["type"] = "added"
+                detail["description"] = f"Field '{key}' was added (not in archived version)"
+            elif current_val is None:
+                detail["type"] = "removed"
+                detail["description"] = f"Field '{key}' was removed from current manifest"
+            else:
+                detail["type"] = "modified"
+                detail["description"] = f"Field '{key}' changed from archived version"
+            field_details.append(detail)
+
+    # Determine overall severity
+    if not drift_fields:
+        severity = "none"
+    elif any(f in critical_fields for f in drift_fields):
+        severity = "critical"
+    elif any(f in high_fields for f in drift_fields):
+        severity = "high"
+    elif len(drift_fields) > 3:
+        severity = "medium"
+    else:
+        severity = "low"
+
+    # Generate narrative
+    if not drift_fields:
+        narrative = f"No drift detected. Chain {chain_id} is structurally identical to archived version {latest.version}. Constitutional integrity confirmed."
+    else:
+        critical_drifts = [d for d in field_details if d["severity"] == "critical"]
+        narrative_parts = [
+            f"Drift detected in chain {chain_id}: {len(drift_fields)} field(s) changed from archived version {latest.version}.",
+            f"Severity: {severity.upper()}.",
+        ]
+        if critical_drifts:
+            narrative_parts.append(f"CRITICAL: {', '.join(d['field'] for d in critical_drifts)} — constitutional constraint fields have been modified.")
+        narrative_parts.append(f"Changed fields: {', '.join(drift_fields)}.")
+        narrative = " ".join(narrative_parts)
 
     return DriftReport(
         chain_id=chain_id, current_hash=current_hash,
         archived_hash=archived_hash,
         match=(current_hash == archived_hash),
         drift_fields=drift_fields,
-        archived_version=latest.version
+        archived_version=latest.version,
+        severity=severity,
+        narrative=narrative,
+        field_details=field_details,
     )
 
 
