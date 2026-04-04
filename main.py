@@ -35,7 +35,7 @@ import httpx
 app = FastAPI(
     title="Gravity Well Protocol",
     description="Compression, wrapping, and anchoring microservice for durable provenance chains",
-    version="0.4.1"
+    version="0.6.0"
 )
 
 app.add_middleware(
@@ -491,7 +491,7 @@ def build_deposit_document(
 | Concept DOI | {chain.concept_doi or 'pending (first deposit)'} |
 | Objects | {len(objects)} |
 | Deposited | {timestamp} |
-| Protocol | Gravity Well v0.4.1 |
+| Protocol | Gravity Well v0.6.0 |
 
 ---
 """
@@ -661,11 +661,11 @@ Produce the narrative compression now. No preamble."""
 
 # === Zenodo Integration ===
 
-async def zenodo_first_deposit(content: str, metadata: dict) -> dict:
+async def zenodo_first_deposit(content: str, metadata: dict, zenodo_token: str = None) -> dict:
     """Create a new Zenodo record (first version in a chain)."""
-    token = os.getenv("ZENODO_TOKEN")
+    token = zenodo_token or os.getenv("ZENODO_TOKEN")
     if not token:
-        return {"status": "skipped", "error": "ZENODO_TOKEN not configured"}
+        return {"status": "skipped", "error": "No Zenodo token (per-key or global)"}
 
     try:
         async with httpx.AsyncClient(timeout=60.0) as client:
@@ -724,11 +724,11 @@ async def zenodo_first_deposit(content: str, metadata: dict) -> dict:
         return {"status": "failed", "error": str(e)}
 
 
-async def zenodo_new_version(latest_record_id: str, content: str, metadata: dict) -> dict:
+async def zenodo_new_version(latest_record_id: str, content: str, metadata: dict, zenodo_token: str = None) -> dict:
     """Create a new version of an existing Zenodo record."""
-    token = os.getenv("ZENODO_TOKEN")
+    token = zenodo_token or os.getenv("ZENODO_TOKEN")
     if not token:
-        return {"status": "skipped", "error": "ZENODO_TOKEN not configured"}
+        return {"status": "skipped", "error": "No Zenodo token (per-key or global)"}
 
     try:
         async with httpx.AsyncClient(timeout=60.0) as client:
@@ -1051,10 +1051,12 @@ async def deposit(
 
     if chain.latest_record_id:
         # New version of existing record
-        result = await zenodo_new_version(chain.latest_record_id, doc, zen_meta)
+        user_token = get_zenodo_token_for_key(api_key_id, db)
+        result = await zenodo_new_version(chain.latest_record_id, doc, zen_meta, zenodo_token=user_token)
     else:
         # First deposit in this chain
-        result = await zenodo_first_deposit(doc, zen_meta)
+        user_token = get_zenodo_token_for_key(api_key_id, db)
+        result = await zenodo_first_deposit(doc, zen_meta, zenodo_token=user_token)
 
     # Record the deposit
     deposit_id = str(uuid.uuid4())
@@ -1491,11 +1493,47 @@ async def governance_action(
         return {"status": "ok", "action": request.action, "data": resp.json()}
 
 
+# --- Public Gamma Scoring (no auth required) ---
+
+@app.post("/v1/gamma")
+async def public_gamma(content: str = Body(..., embed=True)):
+    """
+    Public compression-survival scoring. No API key required.
+    Returns γ score + subscores for any text.
+    This is the 'try before you buy' funnel.
+    """
+    if not content or len(content.strip()) < 10:
+        return {"gamma": 0.0, "error": "Content too short (minimum 10 characters)"}
+
+    gamma = calculate_gamma(content)
+    wc = len(content.split())
+
+    return {
+        "gamma": gamma,
+        "word_count": wc,
+        "survival_tier": "critical" if gamma > 0.7 else "high" if gamma > 0.5 else "medium" if gamma > 0.3 else "low",
+        "recommendation": "Content is compression-survivable" if gamma > 0.5 else "Consider adding structural markers, citations, and provenance references",
+        "protocol": "gravity-well",
+        "note": "Full compression analysis with AI-mediated scoring available with API key via /v1/invoke",
+    }
+
+
 # --- Health & Schema ---
 
 @app.get("/v1/health")
 async def health():
-    return {"status": "healthy", "version": "0.5.0", "protocol": "gravity-well", "phase": 1}
+    return {
+        "status": "healthy",
+        "version": "0.6.0",
+        "protocol": "gravity-well",
+        "phase": 2,
+        "capabilities": {
+            "invoke": bool(ANTHROPIC_API_KEY),
+            "governance": bool(SUPABASE_URL and SUPABASE_SERVICE_KEY),
+            "deposit": bool(os.getenv("ZENODO_TOKEN")),
+            "compression": bool(ANTHROPIC_API_KEY),
+        },
+    }
 
 
 @app.get("/v1/schema/bootstrap")
