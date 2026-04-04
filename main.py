@@ -12,6 +12,7 @@ Flow: Capture → Compress → Anchor
 """
 
 from fastapi import FastAPI, HTTPException, Depends, Header, Body
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel, Field
 from typing import Optional, List, Dict, Any, Literal
@@ -35,6 +36,18 @@ app = FastAPI(
     title="Gravity Well Protocol",
     description="Compression, wrapping, and anchoring microservice for durable provenance chains",
     version="0.4.1"
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "https://crimson-hexagonal-interface.vercel.app",
+        "http://localhost:5173",
+        "http://localhost:3000",
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 security = HTTPBearer(auto_error=False)
