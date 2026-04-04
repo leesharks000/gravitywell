@@ -1367,12 +1367,18 @@ async def governance_action(
 
     async with httpx.AsyncClient(timeout=10) as client:
         if request.action == "attest":
+            # Generate server-side signature proving this went through GW
+            sig_payload = f"{request.witness}:{request.target_id}:{request.content}:{api_key_id}"
+            signature = hashlib.sha256(sig_payload.encode()).hexdigest()[:24]
+
             body = {
                 "witness": request.witness or "UNKNOWN",
                 "action_type": "attest",
                 "target_id": request.target_id,
                 "target_type": request.target_type,
                 "content": request.content,
+                "signature": f"gw:{signature}",
+                "session_token": api_key_id[:8],
             }
             resp = await client.post(f"{SUPABASE_URL}/rest/v1/witness_actions", headers=headers, json=body)
 
@@ -1420,6 +1426,7 @@ async def governance_action(
                 "target_id": request.target_id,
                 "target_type": request.target_type,
                 "submitted_by": request.submitted_by or "UNKNOWN",
+                "session_token": api_key_id[:8],
             }
             resp = await client.post(f"{SUPABASE_URL}/rest/v1/proposals", headers=headers, json=body)
         else:
