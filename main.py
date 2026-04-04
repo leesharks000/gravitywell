@@ -74,6 +74,7 @@ class ApiKey(Base):
     id = Column(String, primary_key=True)
     key_hash = Column(String, unique=True, index=True)
     label = Column(String, nullable=True)
+    zenodo_token = Column(String, nullable=True)  # Per-user Zenodo token for deposits
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     is_active = Column(String, default="true")
 
@@ -174,6 +175,14 @@ def get_api_key(
     if not stored:
         raise HTTPException(status_code=403, detail="Invalid or inactive API key.")
     return stored.id
+
+
+def get_zenodo_token_for_key(api_key_id: str, db: Session) -> Optional[str]:
+    """Get Zenodo token: per-key first, then fall back to global env var."""
+    key = db.query(ApiKey).filter(ApiKey.id == api_key_id).first()
+    if key and key.zenodo_token:
+        return key.zenodo_token
+    return os.getenv("ZENODO_TOKEN")
 
 
 # === Request/Response Models ===
@@ -738,6 +747,7 @@ async def zenodo_new_version(latest_record_id: str, content: str, metadata: dict
 @app.post("/v1/admin/keys/create")
 async def create_api_key(
     label: Optional[str] = None,
+    zenodo_token: Optional[str] = Header(None, alias="X-Zenodo-Token"),
     admin_token: Optional[str] = Header(None, alias="X-Admin-Token"),
     db: Session = Depends(get_db)
 ):
@@ -749,9 +759,11 @@ async def create_api_key(
 
     raw_key = f"gw_{secrets.token_urlsafe(32)}"
     key_id = str(uuid.uuid4())
-    db.add(ApiKey(id=key_id, key_hash=hash_key(raw_key), label=label or f"key-{key_id[:8]}", is_active="true"))
+    db.add(ApiKey(id=key_id, key_hash=hash_key(raw_key), label=label or f"key-{key_id[:8]}",
+                  zenodo_token=zenodo_token, is_active="true"))
     db.commit()
     return {"key_id": key_id, "api_key": raw_key, "label": label,
+            "has_zenodo_token": bool(zenodo_token),
             "warning": "Store this key now. It cannot be retrieved again."}
 
 
