@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Gravity Well — Dashboard</title>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;600&family=JetBrains+Mono:wght@300;400&display=swap" rel="stylesheet">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{--bg:#06080a;--bg-card:#0d1117;--amber:#c9a84c;--amber-dim:#c9a84c44;--text:#8a9a7a;--text-dim:#4a5a4a;--text-bright:#b0c0a0;--border:#1a2a1a;--serif:'Cormorant Garamond',Georgia,serif;--mono:'JetBrains Mono',monospace}
+body{background:var(--bg);color:var(--text);font-family:var(--serif);line-height:1.7;padding:24px}
+.container{max-width:800px;margin:0 auto}
+h1{font-size:28px;color:var(--text-bright);font-weight:400;margin-bottom:4px}
+h2{font-size:18px;color:var(--text-bright);font-weight:400;margin:24px 0 8px}
+.subtitle{font-family:var(--mono);font-size:10px;color:var(--text-dim);letter-spacing:2px;margin-bottom:24px}
+input,textarea,select{width:100%;background:var(--bg);border:1px solid var(--border);color:var(--text-bright);font-family:var(--mono);font-size:12px;padding:10px;margin:4px 0 12px}
+input:focus,textarea:focus{outline:none;border-color:var(--amber-dim)}
+textarea{min-height:80px;resize:vertical}
+.btn{font-family:var(--mono);font-size:11px;letter-spacing:2px;text-transform:uppercase;padding:10px 20px;border:1px solid var(--amber-dim);background:transparent;color:var(--amber);cursor:pointer;margin:4px 4px 4px 0}
+.btn:hover{background:var(--amber-dim)}
+.btn-primary{background:var(--amber);color:var(--bg);border-color:var(--amber)}
+.card{background:var(--bg-card);border:1px solid var(--border);padding:16px;margin:8px 0}
+.result{font-family:var(--mono);font-size:11px;color:var(--text-dim);padding:12px;min-height:40px;white-space:pre-wrap;word-break:break-all}
+.tab-bar{display:flex;gap:2px;margin-bottom:16px}
+.tab{font-family:var(--mono);font-size:10px;letter-spacing:1px;padding:8px 16px;background:var(--bg-card);border:1px solid var(--border);color:var(--text-dim);cursor:pointer}
+.tab.active{color:var(--amber);border-color:var(--amber-dim)}
+.section{display:none}
+.section.active{display:block}
+label{font-family:var(--mono);font-size:10px;color:var(--text-dim);letter-spacing:1px}
+.status{font-family:var(--mono);font-size:10px;padding:4px 8px;display:inline-block;margin:4px 0}
+.status.ok{color:var(--amber);border:1px solid var(--amber-dim)}
+.status.err{color:#8a4a4a;border:1px solid #4a2a2a}
+a{color:var(--amber);text-decoration:none}
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>Gravity Well</h1>
+  <div class="subtitle">CONTINUITY DASHBOARD</div>
+
+  <!-- API Key -->
+  <div class="card">
+    <label>API Key</label>
+    <input type="password" id="api-key" placeholder="gw_..." value="">
+    <div style="display:flex;gap:8px;align-items:center">
+      <button class="btn" onclick="testKey()">Test Connection</button>
+      <button class="btn" onclick="registerNew()">Register New</button>
+      <span id="key-status"></span>
+    </div>
+  </div>
+
+  <!-- Tabs -->
+  <div class="tab-bar">
+    <div class="tab active" onclick="showTab('capture')">Capture</div>
+    <div class="tab" onclick="showTab('chains')">Chains</div>
+    <div class="tab" onclick="showTab('deposit')">Deposit</div>
+    <div class="tab" onclick="showTab('reconstitute')">Reconstitute</div>
+    <div class="tab" onclick="showTab('drift')">Drift</div>
+    <div class="tab" onclick="showTab('gamma')">γ Score</div>
+  </div>
+
+  <!-- CAPTURE -->
+  <div id="sec-capture" class="section active">
+    <h2>Capture to Chain</h2>
+    <label>Chain ID</label>
+    <input id="cap-chain" placeholder="chain UUID">
+    <label>Content</label>
+    <textarea id="cap-content" placeholder="Your content..."></textarea>
+    <label>Visibility</label>
+    <select id="cap-vis">
+      <option value="public">Public — stored in plaintext</option>
+      <option value="private">Private — stored as-is (use Python client for encryption)</option>
+      <option value="hash_only">Hash Only — content discarded, only hash kept</option>
+    </select>
+    <button class="btn btn-primary" onclick="doCapture()">Capture</button>
+    <div id="cap-result" class="result"></div>
+  </div>
+
+  <!-- CHAINS -->
+  <div id="sec-chains" class="section">
+    <h2>Your Chains</h2>
+    <button class="btn btn-primary" onclick="listChains()">Load Chains</button>
+    <button class="btn" onclick="showCreateChain()">Create New Chain</button>
+    <div id="create-chain-form" style="display:none;margin:12px 0">
+      <label>Label (or leave blank for auto-generated)</label>
+      <input id="new-chain-label" placeholder="GW.MyAgent.continuity">
+      <label>Anchor Policy</label>
+      <select id="new-chain-policy">
+        <option value="local">Local — no DOI, stays in GW</option>
+        <option value="zenodo">Zenodo — DOI-anchored, public</option>
+      </select>
+      <label>Auto-deposit threshold (captures)</label>
+      <input id="new-chain-threshold" type="number" placeholder="50">
+      <label>Auto-deposit interval (minutes)</label>
+      <input id="new-chain-interval" type="number" placeholder="1440">
+      <button class="btn btn-primary" onclick="createChain()">Create</button>
+    </div>
+    <div id="chains-result" class="result"></div>
+  </div>
+
+  <!-- DEPOSIT -->
+  <div id="sec-deposit" class="section">
+    <h2>Deposit</h2>
+    <label>Chain ID</label>
+    <input id="dep-chain" placeholder="chain UUID">
+    <label>Title (optional)</label>
+    <input id="dep-title" placeholder="Auto-generated if blank">
+    <label><input type="checkbox" id="dep-compress" checked> AI narrative compression</label>
+    <button class="btn btn-primary" onclick="doDeposit()">Deposit Now</button>
+    <div id="dep-result" class="result"></div>
+  </div>
+
+  <!-- RECONSTITUTE -->
+  <div id="sec-reconstitute" class="section">
+    <h2>Reconstitute</h2>
+    <label>Chain ID</label>
+    <input id="recon-chain" placeholder="chain UUID">
+    <button class="btn btn-primary" onclick="doReconstitute()">Reconstitute</button>
+    <div id="recon-result" class="result"></div>
+  </div>
+
+  <!-- DRIFT -->
+  <div id="sec-drift" class="section">
+    <h2>Drift Detection</h2>
+    <label>Chain ID</label>
+    <input id="drift-chain" placeholder="chain UUID">
+    <label>Current Bootstrap Manifest (JSON)</label>
+    <textarea id="drift-manifest" placeholder='{"identity":{"name":"...","constraints":[...]}}'></textarea>
+    <button class="btn btn-primary" onclick="doDrift()">Check Drift</button>
+    <div id="drift-result" class="result"></div>
+  </div>
+
+  <!-- GAMMA -->
+  <div id="sec-gamma" class="section">
+    <h2>γ Compression-Survival Score</h2>
+    <label>Content (no auth required)</label>
+    <textarea id="gamma-content" placeholder="Paste any text..."></textarea>
+    <button class="btn btn-primary" onclick="doGamma()">Score γ</button>
+    <button class="btn" onclick="doDrowning()">Drowning Test</button>
+    <div id="gamma-result" class="result"></div>
+  </div>
+
+  <div style="margin-top:24px;font-family:var(--mono);font-size:9px;color:var(--text-dim);text-align:center">
+    <a href="/">Landing Page</a> · <a href="/docs">API Docs</a> · <a href="https://github.com/leesharks000/gravitywell">GitHub</a> · Gravity Well v0.7.0
+  </div>
+</div>
+
+<script>
+const GW = window.location.origin;
+function key(){ return document.getElementById('api-key').value.trim(); }
+function headers(){ return {'Authorization':'Bearer '+key(),'Content-Type':'application/json'}; }
+function show(id,txt){ document.getElementById(id).textContent = typeof txt==='string'?txt:JSON.stringify(txt,null,2); }
+
+function showTab(name){
+  document.querySelectorAll('.section').forEach(s=>s.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+  document.getElementById('sec-'+name).classList.add('active');
+  event.target.classList.add('active');
+}
+
+async function testKey(){
+  const s=document.getElementById('key-status');
+  if(!key()){s.innerHTML='<span class="status err">No key</span>';return}
+  try{
+    const r=await fetch(GW+'/v1/chains',{headers:headers()});
+    if(r.ok){const d=await r.json();s.innerHTML=`<span class="status ok">Connected — ${d.length||0} chains</span>`}
+    else s.innerHTML=`<span class="status err">${r.status}</span>`;
+  }catch(e){s.innerHTML=`<span class="status err">${e.message}</span>`}
+}
+
+async function registerNew(){
+  const label=prompt('Agent label:');if(!label)return;
+  try{
+    const r=await fetch(GW+'/v1/register',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({label})});
+    const d=await r.json();
+    if(d.api_key){document.getElementById('api-key').value=d.api_key;alert('Key created: '+d.api_key+'\n\nSAVE THIS — it cannot be retrieved again.')}
+    else alert('Error: '+JSON.stringify(d));
+  }catch(e){alert('Error: '+e.message)}
+}
+
+function showCreateChain(){document.getElementById('create-chain-form').style.display='block'}
+
+async function createChain(){
+  const payload={};
+  const label=document.getElementById('new-chain-label').value.trim();
+  if(label)payload.label=label;
+  payload.anchor_policy=document.getElementById('new-chain-policy').value;
+  const t=document.getElementById('new-chain-threshold').value;
+  if(t)payload.auto_deposit_threshold=parseInt(t);
+  const i=document.getElementById('new-chain-interval').value;
+  if(i)payload.auto_deposit_interval=parseInt(i);
+  try{
+    const r=await fetch(GW+'/v1/chain/create',{method:'POST',headers:headers(),body:JSON.stringify(payload)});
+    show('chains-result',await r.json());
+  }catch(e){show('chains-result','Error: '+e.message)}
+}
+
+async function listChains(){
+  try{
+    const r=await fetch(GW+'/v1/chains',{headers:headers()});
+    const d=await r.json();
+    if(!d.length){show('chains-result','No chains yet. Create one.');return}
+    let out='';
+    for(const c of d){out+=`${c.label}\n  ID: ${c.chain_id}\n  Policy: ${c.anchor_policy||'zenodo'}\n  Version: ${c.latest_version}\n  DOI: ${c.concept_doi||'local'}\n\n`}
+    show('chains-result',out);
+  }catch(e){show('chains-result','Error: '+e.message)}
+}
+
+async function doCapture(){
+  const chain=document.getElementById('cap-chain').value.trim();
+  const content=document.getElementById('cap-content').value.trim();
+  const vis=document.getElementById('cap-vis').value;
+  if(!chain||!content){show('cap-result','Chain ID and content required.');return}
+  show('cap-result','Capturing...');
+  try{
+    const r=await fetch(GW+'/v1/capture',{method:'POST',headers:headers(),body:JSON.stringify({chain_id:chain,content,content_type:'text',visibility:vis})});
+    show('cap-result',await r.json());
+  }catch(e){show('cap-result','Error: '+e.message)}
+}
+
+async function doDeposit(){
+  const chain=document.getElementById('dep-chain').value.trim();
+  if(!chain){show('dep-result','Chain ID required.');return}
+  show('dep-result','Depositing... (may take 10-30 seconds)');
+  try{
+    const payload={chain_id:chain,auto_compress:document.getElementById('dep-compress').checked,deposit_metadata:{}};
+    const title=document.getElementById('dep-title').value.trim();
+    if(title)payload.deposit_metadata.title=title;
+    const r=await fetch(GW+'/v1/deposit',{method:'POST',headers:headers(),body:JSON.stringify(payload)});
+    show('dep-result',await r.json());
+  }catch(e){show('dep-result','Error: '+e.message)}
+}
+
+async function doReconstitute(){
+  const chain=document.getElementById('recon-chain').value.trim();
+  if(!chain){show('recon-result','Chain ID required.');return}
+  show('recon-result','Reconstituting...');
+  try{
+    const r=await fetch(GW+'/v1/reconstitute/'+chain,{headers:headers()});
+    show('recon-result',await r.json());
+  }catch(e){show('recon-result','Error: '+e.message)}
+}
+
+async function doDrift(){
+  const chain=document.getElementById('drift-chain').value.trim();
+  const manifest=document.getElementById('drift-manifest').value.trim();
+  if(!chain||!manifest){show('drift-result','Chain ID and manifest required.');return}
+  try{
+    const r=await fetch(GW+'/v1/drift/'+chain,{method:'POST',headers:headers(),body:JSON.stringify({current_manifest:JSON.parse(manifest)})});
+    show('drift-result',await r.json());
+  }catch(e){show('drift-result','Error: '+e.message)}
+}
+
+async function doGamma(){
+  const content=document.getElementById('gamma-content').value.trim();
+  if(!content){show('gamma-result','Paste some text.');return}
+  show('gamma-result','Scoring...');
+  try{
+    const r=await fetch(GW+'/v1/gamma',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({content})});
+    show('gamma-result',await r.json());
+  }catch(e){show('gamma-result','Error: '+e.message)}
+}
+
+async function doDrowning(){
+  const content=document.getElementById('gamma-content').value.trim();
+  if(!content||content.length<50){show('gamma-result','Need 50+ characters.');return}
+  show('gamma-result','Running drowning test...');
+  try{
+    const r=await fetch(GW+'/v1/drowning-test',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({content})});
+    show('gamma-result',await r.json());
+  }catch(e){show('gamma-result','Error: '+e.message)}
+}
+</script>
+</body>
+</html>

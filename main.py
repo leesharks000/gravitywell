@@ -2808,6 +2808,12 @@ async def landing_page():
     return FileResponse("landing.html", media_type="text/html")
 
 
+@app.get("/dashboard", response_class=FileResponse)
+async def dashboard():
+    """Continuity dashboard — web UI for chain management."""
+    return FileResponse("dashboard.html", media_type="text/html")
+
+
 # --- Health & Schema ---
 
 @app.get("/v1/health")
