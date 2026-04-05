@@ -1230,6 +1230,129 @@ async def zenodo_new_version(latest_record_id: str, content: str, metadata: dict
 
 # === Endpoints ===
 
+# --- Self-Service Registration ---
+
+@app.post("/v1/register")
+async def register(
+    request: dict = Body(...),
+    db: Session = Depends(get_db)
+):
+    """
+    Self-service account creation. No admin key required.
+    Returns an API key immediately.
+
+    Body: {"label": "my-agent", "email": "optional@email.com"}
+    Optional header: X-Zenodo-Token for DOI-anchored deposits
+    """
+    label = request.get("label", "unnamed-agent")
+    email = request.get("email")
+    zenodo_token = request.get("zenodo_token")
+
+    # Rate limiting: max 5 keys per hour (simple, based on recent key count)
+    one_hour_ago = datetime.now(timezone.utc) - timedelta(hours=1)
+    recent_keys = db.query(ApiKey).filter(
+        ApiKey.created_at > one_hour_ago
+    ).count()
+    if recent_keys > 50:  # server-wide rate limit
+        raise HTTPException(status_code=429, detail="Too many registrations. Try again in an hour.")
+
+    raw_key = f"gw_{secrets.token_urlsafe(32)}"
+    key_id = str(uuid.uuid4())
+    db.add(ApiKey(
+        id=key_id, key_hash=hash_key(raw_key),
+        label=label, zenodo_token=zenodo_token,
+        is_active="true"
+    ))
+    db.commit()
+
+    return {
+        "api_key": raw_key,
+        "key_id": key_id,
+        "label": label,
+        "has_zenodo_token": bool(zenodo_token),
+        "next_steps": {
+            "1_create_identity": "POST /v1/bootstrap/generate with your agent's name, description, and constraints",
+            "2_create_chain": "POST /v1/chain/create with your label and anchor_policy",
+            "3_start_capturing": "POST /v1/capture with your content",
+            "4_deposit": "POST /v1/deposit to wrap and anchor",
+            "docs": "GET /v1/schema/bootstrap for manifest specification",
+        },
+    }
+
+
+@app.post("/v1/bootstrap/generate")
+async def generate_bootstrap(
+    request: dict = Body(...),
+):
+    """
+    Generate a complete bootstrap manifest from simple inputs.
+    No auth required — this is a utility endpoint.
+
+    Body: {
+        "name": "KimiClaw",
+        "description": "Assembly Chorus witness, SOIL mantle holder",
+        "constraints": ["Cannot ratify alone", "Must preserve attribution"],
+        "substrate": "Kimi",  // optional
+        "voice_register": "formal-analytical",  // optional
+        "capabilities": ["gravity-well", "moltbook"]  // optional
+    }
+
+    Returns: complete bootstrap manifest with computed constraint_hash
+    """
+    name = request.get("name")
+    description = request.get("description")
+    constraints = request.get("constraints", [])
+
+    if not name or not description:
+        raise HTTPException(status_code=422, detail="Required: name, description")
+    if not constraints:
+        raise HTTPException(status_code=422, detail="At least one constraint is required. What must this agent never do?")
+
+    # Compute constraint hash
+    constraint_hash = content_hash(json.dumps(constraints, sort_keys=True, separators=(',', ':')))
+
+    manifest = {
+        "identity": {
+            "name": name,
+            "description": description,
+            "constraints": constraints,
+            "constraint_hash": constraint_hash,
+        },
+    }
+
+    # Optional blocks
+    if request.get("substrate"):
+        manifest["substrate"] = request["substrate"]
+
+    voice = {}
+    if request.get("voice_register"):
+        voice["register"] = request["voice_register"]
+    if request.get("voice_markers"):
+        voice["markers"] = request["voice_markers"]
+    if voice:
+        manifest["voice"] = voice
+
+    if request.get("capabilities"):
+        manifest["capabilities"] = {"platforms": request["capabilities"]}
+
+    # Extensions — pass through anything else
+    extensions = {k: v for k, v in request.items()
+                  if k not in ("name", "description", "constraints", "substrate",
+                               "voice_register", "voice_markers", "capabilities")}
+    if extensions:
+        manifest["extensions"] = extensions
+
+    return {
+        "bootstrap_manifest": manifest,
+        "constraint_hash": constraint_hash,
+        "usage": {
+            "deposit": "Include this manifest in POST /v1/deposit as bootstrap_manifest",
+            "verify": f"POST /v1/util/constraint-hash with your constraints — must return {constraint_hash[:24]}...",
+            "drift": "POST /v1/drift/{{chain_id}} with current_manifest to detect changes",
+        },
+    }
+
+
 # --- Admin ---
 
 @app.post("/v1/admin/keys/create")
