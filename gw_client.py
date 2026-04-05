@@ -236,7 +236,7 @@ class GravityWellClient:
 
     def capture(self, chain_id: str, content: str,
                 visibility: str = "public",
-                content_type: str = "utterance",
+                content_type: str = "text",
                 parent_object_id: Optional[str] = None,
                 metadata: Optional[dict] = None) -> dict:
         """
