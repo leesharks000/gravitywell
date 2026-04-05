@@ -36,7 +36,7 @@ import httpx
 app = FastAPI(
     title="Gravity Well Protocol",
     description="Compression, wrapping, and anchoring microservice for durable provenance chains",
-    version="0.6.0"
+    version="0.7.0"
 )
 
 app.add_middleware(
@@ -101,6 +101,7 @@ class ProvenanceChain(Base):
     auto_deposit_threshold = Column(Integer, nullable=True)   # Deposit after N captures
     auto_deposit_interval = Column(Integer, nullable=True)    # Deposit every N minutes
     last_auto_deposit = Column(DateTime, nullable=True)       # Timestamp of last auto-deposit
+    anchor_policy = Column(String, default="zenodo")          # zenodo | local (no DOI, stays in GW)
 
 
 class StagedObject(Base):
@@ -137,7 +138,8 @@ class StagedObject(Base):
 
 class DepositRecord(Base):
     """
-    Record of each Zenodo deposit (each version in a chain).
+    Record of each deposit (Zenodo-anchored or local).
+    Local deposits run the full wrapping pipeline but stay in GW — no DOI, no Zenodo clutter.
     """
     __tablename__ = "deposit_records"
     id = Column(String, primary_key=True)
@@ -150,6 +152,8 @@ class DepositRecord(Base):
     tether_handoff_block = Column(JSON, nullable=True)    # Layer 2: operational handoff
     bootstrap_manifest = Column(JSON, nullable=True)      # Layer 1: identity specification
     bootstrap_hash = Column(String, nullable=True)        # Hash of bootstrap for drift detection
+    deposit_document = Column(Text, nullable=True)        # Full wrapped document (stored for local deposits)
+    anchor_policy = Column(String, default="zenodo")      # zenodo | local
     deposited_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     api_key_id = Column(String)
 
@@ -177,6 +181,23 @@ for col in ["auto_deposit_threshold INTEGER", "auto_deposit_interval INTEGER", "
     try:
         with engine.connect() as conn:
             conn.execute(text(f"ALTER TABLE provenance_chains ADD COLUMN {col}"))
+            conn.commit()
+    except Exception:
+        pass
+
+# Auto-migrate: add anchor_policy to chains (added in v0.7.0)
+try:
+    with engine.connect() as conn:
+        conn.execute(text("ALTER TABLE provenance_chains ADD COLUMN anchor_policy TEXT DEFAULT 'zenodo'"))
+        conn.commit()
+except Exception:
+    pass
+
+# Auto-migrate: add deposit_document and anchor_policy to deposit_records (added in v0.7.0)
+for col in ["deposit_document TEXT", "anchor_policy TEXT DEFAULT 'zenodo'"]:
+    try:
+        with engine.connect() as conn:
+            conn.execute(text(f"ALTER TABLE deposit_records ADD COLUMN {col}"))
             conn.commit()
     except Exception:
         pass
@@ -254,6 +275,7 @@ class ChainCreateRequest(BaseModel):
     metadata: Dict[str, Any] = Field(default_factory=dict)
     auto_deposit_threshold: Optional[int] = None   # Auto-deposit after N captures
     auto_deposit_interval: Optional[int] = None    # Auto-deposit every N minutes
+    anchor_policy: Literal["zenodo", "local"] = "zenodo"  # zenodo = DOI-anchored, local = GW-only
 
 
 class ChainResponse(BaseModel):
@@ -262,6 +284,7 @@ class ChainResponse(BaseModel):
     concept_doi: Optional[str]
     latest_version: int
     staged_count: int
+    anchor_policy: str = "zenodo"
 
 
 class DepositRequest(BaseModel):
@@ -827,7 +850,7 @@ def build_deposit_document(
 | Integrity Lock | {integrity_lock or 'none'} |
 | Caesura (σ_FC) | {caesar_header.get('collapse_risk', 'none') if caesar_header else 'none'} collapse risk · {caesar_header.get('claims_detected', 0) if caesar_header else 0} claims |
 | Deposited | {timestamp} |
-| Protocol | Gravity Well v0.6.0 |
+| Protocol | Gravity Well v0.7.0 |
 
 ---
 """
@@ -1257,19 +1280,21 @@ async def create_chain(
     api_key_id: str = Depends(get_api_key),
     db: Session = Depends(get_db)
 ):
-    """Create a new provenance chain. Each chain becomes one concept DOI on Zenodo."""
+    """Create a new provenance chain. Each chain becomes one concept DOI on Zenodo (or stays local)."""
     chain_id = str(uuid.uuid4())
     chain = ProvenanceChain(
         id=chain_id, label=request.label, api_key_id=api_key_id,
         metadata_json=request.metadata,
         auto_deposit_threshold=request.auto_deposit_threshold,
         auto_deposit_interval=request.auto_deposit_interval,
+        anchor_policy=request.anchor_policy,
     )
     db.add(chain)
     db.commit()
     return ChainResponse(
         chain_id=chain_id, label=request.label,
-        concept_doi=None, latest_version=0, staged_count=0
+        concept_doi=None, latest_version=0, staged_count=0,
+        anchor_policy=request.anchor_policy
     )
 
 
@@ -1292,7 +1317,8 @@ async def get_chain(
     return ChainResponse(
         chain_id=chain.id, label=chain.label,
         concept_doi=chain.concept_doi, latest_version=chain.latest_version,
-        staged_count=staged
+        staged_count=staged,
+        anchor_policy=getattr(chain, 'anchor_policy', 'zenodo')
     )
 
 
@@ -1515,65 +1541,99 @@ async def deposit(
     if request.bootstrap_manifest:
         bootstrap_hash = content_hash(json.dumps(request.bootstrap_manifest, sort_keys=True, separators=(',', ':')))
 
-    # Anchor to Zenodo
-    deposit_title = request.deposit_metadata.get(
-        "title", f"{chain.label} — v{version}"
-    )
-    deposit_desc = request.deposit_metadata.get(
-        "description",
-        f"Provenance deposit v{version}: {len(objects)} objects from {chain.label}"
-    )
-    zen_meta = {
-        "title": deposit_title,
-        "description": deposit_desc,
-        "filename": f"{chain.label.replace(' ', '_')}_v{version}.md",
-        "keywords": ["gravity-well", "provenance", "continuity", chain.label],
-        "creators": request.deposit_metadata.get("creators", [{"name": "Sharks, Lee"}]),
-    }
+    # Determine anchor policy
+    policy = getattr(chain, 'anchor_policy', 'zenodo')
 
-    if chain.latest_record_id:
-        # New version of existing record
-        user_token = get_zenodo_token_for_key(api_key_id, db)
-        result = await zenodo_new_version(chain.latest_record_id, doc, zen_meta, zenodo_token=user_token)
+    if policy == "zenodo":
+        # === ZENODO ANCHOR: push to Zenodo, get DOI ===
+        deposit_title = request.deposit_metadata.get(
+            "title", f"{chain.label} — v{version}"
+        )
+        deposit_desc = request.deposit_metadata.get(
+            "description",
+            f"Provenance deposit v{version}: {len(objects)} objects from {chain.label}"
+        )
+        zen_meta = {
+            "title": deposit_title,
+            "description": deposit_desc,
+            "filename": f"{chain.label.replace(' ', '_')}_v{version}.md",
+            "keywords": ["gravity-well", "provenance", "continuity", chain.label],
+            "creators": request.deposit_metadata.get("creators", [{"name": "Sharks, Lee"}]),
+        }
+
+        if chain.latest_record_id:
+            user_token = get_zenodo_token_for_key(api_key_id, db)
+            result = await zenodo_new_version(chain.latest_record_id, doc, zen_meta, zenodo_token=user_token)
+        else:
+            user_token = get_zenodo_token_for_key(api_key_id, db)
+            result = await zenodo_first_deposit(doc, zen_meta, zenodo_token=user_token)
+
+        # Record the deposit
+        deposit_id = str(uuid.uuid4())
+        deposit_rec = DepositRecord(
+            id=deposit_id, chain_id=chain.id, version=version,
+            doi=result.get("doi"), zenodo_record_id=result.get("record_id"),
+            object_count=len(objects), narrative_summary=narrative,
+            tether_handoff_block=request.tether_handoff_block,
+            bootstrap_manifest=request.bootstrap_manifest,
+            bootstrap_hash=bootstrap_hash,
+            deposit_document=doc,
+            anchor_policy="zenodo",
+            api_key_id=api_key_id,
+        )
+        db.add(deposit_rec)
+
+        # Update chain
+        if result.get("status") == "confirmed":
+            chain.latest_version = version
+            chain.latest_record_id = result.get("record_id")
+            if not chain.concept_doi:
+                chain.concept_doi = result.get("concept_doi")
+                chain.concept_record_id = result.get("concept_record_id")
+
+            for obj in objects:
+                obj.deposited = "true"
+                obj.deposit_version = version
+
+        db.commit()
+
+        return DepositResponse(
+            deposit_id=deposit_id, chain_id=chain.id, version=version,
+            doi=result.get("doi"), object_count=len(objects),
+            narrative_summary=narrative,
+            zenodo_url=result.get("url"),
+        )
+
     else:
-        # First deposit in this chain
-        user_token = get_zenodo_token_for_key(api_key_id, db)
-        result = await zenodo_first_deposit(doc, zen_meta, zenodo_token=user_token)
+        # === LOCAL DEPOSIT: full wrapping pipeline, no Zenodo ===
+        # The document is complete. It just stays here.
+        deposit_id = str(uuid.uuid4())
+        deposit_rec = DepositRecord(
+            id=deposit_id, chain_id=chain.id, version=version,
+            doi=None, zenodo_record_id=None,
+            object_count=len(objects), narrative_summary=narrative,
+            tether_handoff_block=request.tether_handoff_block,
+            bootstrap_manifest=request.bootstrap_manifest,
+            bootstrap_hash=bootstrap_hash,
+            deposit_document=doc,
+            anchor_policy="local",
+            api_key_id=api_key_id,
+        )
+        db.add(deposit_rec)
 
-    # Record the deposit
-    deposit_id = str(uuid.uuid4())
-    deposit_rec = DepositRecord(
-        id=deposit_id, chain_id=chain.id, version=version,
-        doi=result.get("doi"), zenodo_record_id=result.get("record_id"),
-        object_count=len(objects), narrative_summary=narrative,
-        tether_handoff_block=request.tether_handoff_block,
-        bootstrap_manifest=request.bootstrap_manifest,
-        bootstrap_hash=bootstrap_hash,
-        api_key_id=api_key_id,
-    )
-    db.add(deposit_rec)
-
-    # Update chain
-    if result.get("status") == "confirmed":
         chain.latest_version = version
-        chain.latest_record_id = result.get("record_id")
-        if not chain.concept_doi:
-            chain.concept_doi = result.get("concept_doi")
-            chain.concept_record_id = result.get("concept_record_id")
-
-        # Mark objects as deposited
         for obj in objects:
             obj.deposited = "true"
             obj.deposit_version = version
 
-    db.commit()
+        db.commit()
 
-    return DepositResponse(
-        deposit_id=deposit_id, chain_id=chain.id, version=version,
-        doi=result.get("doi"), object_count=len(objects),
-        narrative_summary=narrative,
-        zenodo_url=result.get("url"),
-    )
+        return DepositResponse(
+            deposit_id=deposit_id, chain_id=chain.id, version=version,
+            doi=None, object_count=len(objects),
+            narrative_summary=narrative,
+            zenodo_url=None,
+        )
 
 
 # --- Reconstitution ---
@@ -2305,7 +2365,7 @@ async def landing_page():
 async def health():
     return {
         "status": "healthy",
-        "version": "0.6.0",
+        "version": "0.7.0",
         "protocol": "gravity-well",
         "phase": 2,
         "capabilities": {
