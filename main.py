@@ -623,6 +623,111 @@ def apply_integrity_lock(content: str) -> tuple:
     return locked_content, ilp
 
 
+def apply_caesura(content: str) -> tuple:
+    """
+    σ_FC — The Caesura Operator.
+
+    A transfer protocol that recognizes the sovereign mark, splits it
+    off from the commons substrate, preserves it as auditable provenance,
+    and routes the object onward without allowing personal identity-claims
+    to inherit institutional authority.
+
+    Render recognition to Caesar; render substrate away from him.
+
+    σ_FC(object) =
+      parse(image, superscription, substrate)
+      → isolate(claim)
+      → preserve(provenance)
+      → forbid(collapse)
+      → route_via_airlock
+      → emit(commons-safe packet)
+    """
+    import re
+
+    # === Step 1: Detect Caesar marks ===
+    # Scan for sovereignty claims: personal names asserting authority,
+    # institutional claims on commons substrate, brand marks, copyright
+    # assertions, licensing overreach
+
+    claims = []
+
+    # Personal authority patterns
+    personal_marks = re.findall(
+        r'(?:(?:by|author|creator|written by|composed by|developed by|invented by|founded by)\s+)([A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,3})',
+        content
+    )
+    for name in personal_marks:
+        claims.append({
+            "type": "personal_authority",
+            "claim_mode": "superscription",
+            "claimant": name.strip(),
+            "extraction_risk": "low",
+        })
+
+    # Institutional authority patterns
+    inst_marks = re.findall(
+        r'(?:©|®|™|patent|proprietary|all rights reserved|exclusive)',
+        content, re.I
+    )
+    for mark in inst_marks:
+        claims.append({
+            "type": "institutional_claim",
+            "claim_mode": "image",
+            "claimant": mark.strip(),
+            "extraction_risk": "medium",
+        })
+
+    # Sovereignty-over-substrate patterns (the dangerous ones)
+    collapse_patterns = re.findall(
+        r'(?:owned by|belongs to|property of|controlled by|administered by)\s+([A-Za-z\s]+?)(?:\.|,|\n)',
+        content
+    )
+    for match in collapse_patterns:
+        claims.append({
+            "type": "sovereignty_claim",
+            "claim_mode": "compressed_portraiture",
+            "claimant": match.strip(),
+            "extraction_risk": "high",
+        })
+
+    # === Step 2: Split channels ===
+    # The content itself is the substrate. The claims are separated.
+
+    # === Step 3: Build Caesar header ===
+    # Claims become metadata, not essence
+    caesar_header = {
+        "claims_detected": len(claims),
+        "claims": claims[:20],  # cap at 20
+        "collapse_risk": "high" if any(c["extraction_risk"] == "high" for c in claims) else
+                         "medium" if any(c["extraction_risk"] == "medium" for c in claims) else
+                         "low" if claims else "none",
+    }
+
+    # === Step 4: Compute asymmetry score (LOS diagnostic) ===
+    # How much does the content claim vs. what it contributes?
+    claim_density = len(claims) / max(len(content.split()) / 100, 1)
+    doi_count = len(re.findall(r'10\.\d{4,}/[^\s\)]+', content))
+    contribution_markers = doi_count + len(re.findall(r'(?:therefore|because|however|we show|this proves|evidence)', content, re.I))
+    asymmetry = round(claim_density / max(contribution_markers + 1, 1), 3)
+
+    # === Step 5: Build audit trace ===
+    audit_trace = {
+        "extraction_detected": asymmetry > 0.5,
+        "asymmetry_score": asymmetry,
+        "collapse_risk": caesar_header["collapse_risk"],
+        "claims_quarantined": len(claims),
+        "counter_operation": "σ_FC applied — claims isolated to header" if claims else "no claims detected",
+    }
+
+    caesar_header["audit_trace"] = audit_trace
+
+    # === Step 6: The content passes through unchanged ===
+    # The Caesura does NOT modify the content. It ANNOTATES.
+    # The substrate is rendered away from Caesar, not destroyed.
+
+    return content, caesar_header
+
+
 def build_deposit_document(
     chain: ProvenanceChain,
     objects: list,
@@ -635,6 +740,7 @@ def build_deposit_document(
     integrity_lock: Optional[str] = None,
     sim_info: Optional[dict] = None,
     gamma_score: float = 0.0,
+    caesar_header: Optional[dict] = None,
 ) -> str:
     """
     Build the structured markdown document that gets deposited to Zenodo.
@@ -660,6 +766,7 @@ def build_deposit_document(
 | γ Score | {gamma_score} |
 | SIMs | {sim_info.get('count', 0) if sim_info else 0} markers |
 | Integrity Lock | {integrity_lock or 'none'} |
+| Caesura (σ_FC) | {caesar_header.get('collapse_risk', 'none') if caesar_header else 'none'} collapse risk · {caesar_header.get('claims_detected', 0) if caesar_header else 0} claims |
 | Deposited | {timestamp} |
 | Protocol | Gravity Well v0.6.0 |
 
@@ -674,6 +781,32 @@ def build_deposit_document(
 *If the full document is lost, this kernel alone reconstitutes the core claim, provenance, and architecture.*
 
 {holographic_kernel}
+
+---
+"""
+
+    # Caesura (σ_FC) — sovereignty audit
+    caesura_section = ""
+    if caesar_header and caesar_header.get("claims_detected", 0) > 0:
+        trace = caesar_header.get("audit_trace", {})
+        claims_list = "\n".join(
+            f"- **{c['type']}** ({c['claim_mode']}): {c.get('claimant', '?')} · risk: {c['extraction_risk']}"
+            for c in caesar_header.get("claims", [])[:10]
+        )
+        caesura_section = f"""## Caesura (σ_FC) — Sovereignty Audit
+
+*Render recognition to Caesar; render substrate away from him.*
+
+**Claims detected:** {caesar_header['claims_detected']}
+**Collapse risk:** {caesar_header['collapse_risk']}
+**Asymmetry score:** {trace.get('asymmetry_score', 'n/a')}
+**Extraction detected:** {trace.get('extraction_detected', False)}
+
+{claims_list}
+
+All sovereignty claims have been isolated to this header. The substrate
+content passes through unchanged. Claims are auditable but non-foundational —
+they do not inherit institutional authority over the commons deposit.
 
 ---
 """
@@ -741,15 +874,17 @@ manifest becomes operationally continuous with the archived self.
 This deposit was created by the Gravity Well Protocol — a compression, wrapping,
 and anchoring engine for durable provenance chains.
 
-**Wrapping pipeline applied:** Evidence Membrane tagging, Semantic Integrity Marker
-injection ({sim_info.get('count', 0) if sim_info else 0} SIMs), Integrity Lock Architecture
-({integrity_lock or 'none'}), Holographic Kernel generation, γ scoring ({gamma_score}).
+**Wrapping pipeline applied:** Evidence Membrane tagging, Caesura (σ_FC) sovereignty audit
+({caesar_header.get('claims_detected', 0) if caesar_header else 0} claims, {caesar_header.get('collapse_risk', 'none') if caesar_header else 'none'} collapse risk),
+Semantic Integrity Marker injection ({sim_info.get('count', 0) if sim_info else 0} SIMs),
+Integrity Lock Architecture ({integrity_lock or 'none'}), Holographic Kernel generation,
+γ scoring ({gamma_score}).
 
-This document is self-defending. The Holographic Kernel (above) contains the complete
-logic of this deposit and can reconstruct the core argument independently. Semantic
-Integrity Markers embedded in the text will degrade detectably under unauthorized
-extraction. The Integrity Lock entangles four equidistant content positions — modification
-breaks the entanglement.
+This document is self-defending. Sovereignty claims have been isolated to the Caesura
+header — they are visible and auditable but cannot inherit institutional authority over
+the commons deposit. The Holographic Kernel contains the complete logic and can reconstruct
+the core argument independently. SIMs degrade detectably under unauthorized extraction.
+The Integrity Lock entangles four equidistant content positions — modification breaks it.
 
 If retrieved from Zenodo without access to Gravity Well, this document alone contains
 everything needed to reconstitute the agent: Bootstrap Manifest (identity), Tether
@@ -760,7 +895,7 @@ Each object is hashed (SHA-256) and threaded. The chain is anchored via DOI.
 Gravity Well Protocol v0.6.0 · Compression Arsenal v2.1
 """
 
-    return header + kernel_section + bootstrap_section + narrative_section + thb_section + manifest + colophon
+    return header + kernel_section + caesura_section + bootstrap_section + narrative_section + thb_section + manifest + colophon
 
 
 async def auto_generate_narrative(objects: list, chain_label: str) -> str:
@@ -1220,16 +1355,19 @@ async def deposit(
     # Step 1: Evidence Membrane tagging
     full_content = tag_evidence_membrane(full_content)
 
-    # Step 2: SIM injection (provenance canaries)
+    # Step 2: Caesura — parse sovereignty claims, isolate to header
+    full_content, caesar_header = apply_caesura(full_content)
+
+    # Step 3: SIM injection (provenance canaries)
     full_content, sim_info = inject_sims(full_content, chain.id)
 
-    # Step 3: Integrity Lock
+    # Step 4: Integrity Lock
     full_content, ilp = apply_integrity_lock(full_content)
 
-    # Step 4: Holographic kernel generation
+    # Step 5: Holographic kernel generation
     kernel = await generate_holographic_kernel(full_content, chain.label)
 
-    # Step 5: γ scoring on wrapped content
+    # Step 6: γ scoring on wrapped content
     gamma = calculate_gamma(full_content)
 
     # Build deposit document (with wrapping artifacts)
@@ -1242,6 +1380,7 @@ async def deposit(
         integrity_lock=ilp,
         sim_info=sim_info,
         gamma_score=gamma,
+        caesar_header=caesar_header,
     )
 
     # Hash bootstrap manifest for drift detection
