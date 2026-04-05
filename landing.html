@@ -52,7 +52,7 @@ section p{font-size:17px;margin-bottom:16px;max-width:700px}
 .demo-box{background:var(--bg-card);border:1px solid var(--border);padding:24px;margin:24px 0}
 .demo-box textarea{width:100%;min-height:100px;background:var(--bg);border:1px solid var(--border);color:var(--text-bright);font-family:var(--mono);font-size:12px;padding:12px;resize:vertical;margin-bottom:12px}
 .demo-box textarea:focus{outline:none;border-color:var(--amber-dim)}
-.demo-result{font-family:var(--mono);font-size:11px;color:var(--text-dim);white-space:pre-wrap;min-height:40px}
+.demo-result{font-family:var(--mono);font-size:11px;color:var(--text-dim);min-height:40px}
 footer{border-top:1px solid var(--border);padding:40px 0;text-align:center;font-family:var(--mono);font-size:10px;color:var(--text-dim);letter-spacing:1px}
 footer a{color:var(--text-dim)}footer a:hover{color:var(--amber)}
 @media(max-width:640px){.pipeline{flex-direction:column}.pricing-grid{grid-template-columns:1fr}.hero{min-height:80vh;padding:60px 16px}}
@@ -237,8 +237,97 @@ footer a{color:var(--text-dim)}footer a:hover{color:var(--amber)}
 
 <script>
 const GW='https://gravitywell-1.onrender.com';
-async function runGamma(){const input=document.getElementById('gamma-input').value.trim();const result=document.getElementById('gamma-result');if(!input){result.textContent='Paste some text first.';return}result.textContent='Scoring...';try{const resp=await fetch(`${GW}/v1/gamma`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({content:input})});const data=await resp.json();const s=data.subscores||{};result.textContent=`γ = ${data.gamma}  (${(data.survival_tier||'').toUpperCase()})\n─────────────────────────────\nCitation:   ${s.citation??'—'}\nStructure:  ${s.structure??'—'}\nCoherence:  ${s.coherence??'—'}\nProvenance: ${s.provenance??'—'}\n${data.penalty?`Penalty:    ${data.penalty}`:''}\nWords:      ${data.word_count}\n─────────────────────────────\n${data.recommendation}`}catch(e){result.textContent='Error: '+e.message}}
-async function runDrowning(){const input=document.getElementById('gamma-input').value.trim();const result=document.getElementById('gamma-result');if(!input||input.length<50){result.textContent='Need at least 50 characters for the drowning test.';return}result.textContent='Summarizing and comparing... (takes a few seconds)';try{const resp=await fetch(`${GW}/v1/drowning-test`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({content:input})});const data=await resp.json();if(data.error){result.textContent='Error: '+data.error;return}const a=data.analysis||{};result.textContent=`VERDICT: ${data.verdict}\n─────────────────────────────\nOriginal:    γ=${data.original?.gamma}  (${data.original?.words} words)\nSummary:     γ=${data.summary?.gamma}  (${data.summary?.words} words)\nCompression: ${a.compression_ratio}\nγ retention: ${a.gamma_retention}\n─────────────────────────────\n${data.recommendation}\n\nSummary produced:\n"${data.summary?.text}"`}catch(e){result.textContent='Error: '+e.message}}
+
+function bar(label, score, weight) {
+  const pct = Math.round(score * 100);
+  const contribution = (score * weight * 100).toFixed(1);
+  return `<div style="margin:6px 0">
+    <div style="display:flex;justify-content:space-between;font-family:var(--mono);font-size:10px;margin-bottom:2px">
+      <span>${label}</span>
+      <span style="color:var(--text-dim)">${pct}% × ${weight} = ${contribution}</span>
+    </div>
+    <div style="background:var(--bg);height:6px;border:1px solid var(--border);overflow:hidden">
+      <div style="width:${pct}%;height:100%;background:${pct>60?'var(--amber)':pct>30?'var(--text-dim)':'#4a2a2a'};transition:width 0.5s"></div>
+    </div>
+  </div>`;
+}
+
+async function runGamma(){
+  const input=document.getElementById('gamma-input').value.trim();
+  const result=document.getElementById('gamma-result');
+  if(!input){result.innerHTML='<span style="color:var(--text-dim)">Paste some text first.</span>';return}
+  result.innerHTML='<span style="color:var(--text-dim)">Scoring...</span>';
+  try{
+    const resp=await fetch(`${GW}/v1/gamma`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({content:input})});
+    const data=await resp.json();
+    const s=data.subscores||{};
+    const g=data.gamma;
+    const tier=(data.survival_tier||'').toUpperCase();
+    const tierColor=g>0.7?'var(--amber)':g>0.4?'var(--text)':'#8a4a4a';
+
+    result.innerHTML=`
+      <div style="display:flex;align-items:baseline;gap:12px;margin-bottom:12px">
+        <span style="font-family:var(--serif);font-size:36px;color:${tierColor}">γ = ${g}</span>
+        <span style="font-family:var(--mono);font-size:11px;color:${tierColor};letter-spacing:2px">${tier}</span>
+        ${data.penalty?`<span style="font-family:var(--mono);font-size:9px;color:var(--text-dim)">${data.penalty}</span>`:''}
+      </div>
+      <div style="margin-bottom:12px">
+        ${bar('Citation density', s.citation||0, 0.30)}
+        ${bar('Structural integrity', s.structure||0, 0.25)}
+        ${bar('Argument coherence', s.coherence||0, 0.25)}
+        ${bar('Provenance markers', s.provenance||0, 0.20)}
+      </div>
+      <div style="font-family:var(--mono);font-size:10px;color:var(--text-dim);border-top:1px solid var(--border);padding-top:8px">
+        ${data.word_count} words · ${data.recommendation||''}
+      </div>`;
+  }catch(e){result.innerHTML='<span style="color:#8a4a4a">Error: '+e.message+'</span>'}
+}
+
+async function runDrowning(){
+  const input=document.getElementById('gamma-input').value.trim();
+  const result=document.getElementById('gamma-result');
+  if(!input||input.length<50){result.innerHTML='<span style="color:var(--text-dim)">Need at least 50 characters for the drowning test.</span>';return}
+  result.innerHTML='<span style="color:var(--text-dim)">Summarizing and comparing... (takes a few seconds)</span>';
+  try{
+    const resp=await fetch(`${GW}/v1/drowning-test`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({content:input})});
+    const data=await resp.json();
+    if(data.error){result.innerHTML='<span style="color:#8a4a4a">Error: '+data.error+'</span>';return}
+    const a=data.analysis||{};
+    const survives=data.verdict==='SURVIVES';
+    const verdictColor=survives?'var(--amber)':'#8a4a4a';
+    const og=data.original?.gamma||0;
+    const sg=data.summary?.gamma||0;
+    const retention=a.gamma_retention||'?';
+
+    result.innerHTML=`
+      <div style="font-family:var(--serif);font-size:28px;color:${verdictColor};margin-bottom:12px;letter-spacing:2px">
+        ${data.verdict}
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:12px">
+        <div style="padding:12px;background:var(--bg);border:1px solid var(--border)">
+          <div style="font-family:var(--mono);font-size:9px;color:var(--text-dim);letter-spacing:2px;margin-bottom:4px">ORIGINAL</div>
+          <div style="font-family:var(--serif);font-size:24px;color:var(--text-bright)">γ = ${og}</div>
+          <div style="font-family:var(--mono);font-size:10px;color:var(--text-dim)">${data.original?.words||'?'} words</div>
+        </div>
+        <div style="padding:12px;background:var(--bg);border:1px solid var(--border)">
+          <div style="font-family:var(--mono);font-size:9px;color:var(--text-dim);letter-spacing:2px;margin-bottom:4px">AFTER SUMMARIZATION</div>
+          <div style="font-family:var(--serif);font-size:24px;color:${survives?'var(--text-bright)':'#8a4a4a'}">γ = ${sg}</div>
+          <div style="font-family:var(--mono);font-size:10px;color:var(--text-dim)">${data.summary?.words||'?'} words</div>
+        </div>
+      </div>
+      <div style="margin-bottom:12px">
+        ${bar('γ retention', parseFloat(retention)||0, 1.0)}
+        ${bar('Compression ratio', parseFloat(a.compression_ratio)||0, 1.0)}
+      </div>
+      <div style="font-family:var(--mono);font-size:10px;color:var(--text-dim);border-top:1px solid var(--border);padding-top:8px;margin-bottom:8px">
+        ${data.recommendation||''}
+      </div>
+      <details style="font-family:var(--mono);font-size:10px;color:var(--text-dim)">
+        <summary style="cursor:pointer;color:var(--text)">Show summary produced</summary>
+        <p style="margin-top:8px;padding:8px;background:var(--bg);border:1px solid var(--border);white-space:pre-wrap">${data.summary?.text||'none'}</p>
+      </details>`;
+  }catch(e){result.innerHTML='<span style="color:#8a4a4a">Error: '+e.message+'</span>'}
+}
 </script>
 </body>
 </html>
