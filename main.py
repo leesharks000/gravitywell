@@ -96,6 +96,11 @@ class ProvenanceChain(Base):
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     metadata_json = Column(JSON, default={})           # Chain-level metadata
 
+    # Auto-deposit triggers
+    auto_deposit_threshold = Column(Integer, nullable=True)   # Deposit after N captures
+    auto_deposit_interval = Column(Integer, nullable=True)    # Deposit every N minutes
+    last_auto_deposit = Column(DateTime, nullable=True)       # Timestamp of last auto-deposit
+
 
 class StagedObject(Base):
     """
@@ -166,6 +171,15 @@ try:
 except Exception:
     pass  # Column already exists
 
+# Auto-migrate: add auto-deposit columns to chains (added in v0.6.0)
+for col in ["auto_deposit_threshold INTEGER", "auto_deposit_interval INTEGER", "last_auto_deposit TIMESTAMP"]:
+    try:
+        with engine.connect() as conn:
+            conn.execute(text(f"ALTER TABLE provenance_chains ADD COLUMN {col}"))
+            conn.commit()
+    except Exception:
+        pass
+
 
 # === Dependencies ===
 
@@ -228,6 +242,8 @@ class CaptureResponse(BaseModel):
     content_hash: str
     captured_at: datetime
     visibility: str = "public"
+    staged_count: int = 0
+    auto_deposit: Optional[Dict[str, Any]] = None
     staged_count: int  # how many undeposited objects now in this chain
 
 
@@ -235,6 +251,8 @@ class ChainCreateRequest(BaseModel):
     """Create a new provenance chain (= future concept DOI)."""
     label: str = Field(..., min_length=1, max_length=200)
     metadata: Dict[str, Any] = Field(default_factory=dict)
+    auto_deposit_threshold: Optional[int] = None   # Auto-deposit after N captures
+    auto_deposit_interval: Optional[int] = None    # Auto-deposit every N minutes
 
 
 class ChainResponse(BaseModel):
@@ -1225,7 +1243,9 @@ async def create_chain(
     chain_id = str(uuid.uuid4())
     chain = ProvenanceChain(
         id=chain_id, label=request.label, api_key_id=api_key_id,
-        metadata_json=request.metadata
+        metadata_json=request.metadata,
+        auto_deposit_threshold=request.auto_deposit_threshold,
+        auto_deposit_interval=request.auto_deposit_interval,
     )
     db.add(chain)
     db.commit()
@@ -1334,11 +1354,45 @@ async def capture(
         StagedObject.chain_id == request.chain_id, StagedObject.deposited == "false"
     ).count()
 
+    # Auto-deposit trigger check
+    auto_deposit_triggered = False
+    if chain.auto_deposit_threshold and staged_count >= chain.auto_deposit_threshold:
+        auto_deposit_triggered = True
+    elif chain.auto_deposit_interval and chain.last_auto_deposit:
+        elapsed = (datetime.now(timezone.utc) - chain.last_auto_deposit).total_seconds() / 60
+        if elapsed >= chain.auto_deposit_interval and staged_count > 0:
+            auto_deposit_triggered = True
+    elif chain.auto_deposit_interval and not chain.last_auto_deposit and staged_count > 0:
+        # First interval trigger — no previous deposit
+        auto_deposit_triggered = True
+
+    auto_deposit_result = None
+    if auto_deposit_triggered:
+        try:
+            # Build a minimal deposit request
+            from starlette.concurrency import run_in_threadpool
+            dep_request = DepositRequest(
+                chain_id=request.chain_id,
+                auto_compress=True,
+                deposit_metadata={"title": f"{chain.label} — auto-deposit", "description": f"Auto-triggered deposit ({staged_count} objects)"},
+            )
+            # We can't easily call the async deposit endpoint from here,
+            # so we mark the trigger and let the response signal the client
+            auto_deposit_result = {
+                "triggered": True,
+                "reason": "threshold" if chain.auto_deposit_threshold else "interval",
+                "staged_count": staged_count,
+                "action": "Client should call POST /v1/deposit to complete. Server-side auto-deposit coming in v0.7.0.",
+            }
+        except Exception:
+            pass
+
     return CaptureResponse(
         object_id=obj_id, chain_id=request.chain_id,
         content_hash=obj.content_hash, captured_at=obj.captured_at,
         visibility=request.visibility,
-        staged_count=staged_count
+        staged_count=staged_count,
+        auto_deposit=auto_deposit_result,
     )
 
 
