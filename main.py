@@ -579,11 +579,26 @@ async def generate_holographic_kernel(content: str, chain_label: str) -> str:
     the core claim, provenance, and architecture.
     """
     if not ANTHROPIC_API_KEY:
-        # Fallback: extract first paragraph + any DOIs
+        # Deterministic fallback: extract structural skeleton
         import re
         dois = re.findall(r'10\.\d{4,}/[^\s\)]+', content)
-        first_para = content.split("\n\n")[0] if content else ""
-        return f"**Kernel:** {first_para[:300]}{'...' if len(first_para) > 300 else ''}\n**Anchors:** {', '.join(dois[:5]) if dois else 'none'}"
+        headers = re.findall(r'^#{1,6}\s+(.+)$', content, re.M)
+        # First sentence of each paragraph
+        paragraphs = [p.strip() for p in content.split("\n\n") if p.strip() and not p.strip().startswith("#") and not p.strip().startswith("|")]
+        first_sentences = []
+        for p in paragraphs[:5]:
+            sent = re.split(r'[.!?]\s', p)
+            if sent:
+                first_sentences.append(sent[0].strip()[:150])
+        kernel_parts = []
+        if headers:
+            kernel_parts.append(f"**Structure:** {' → '.join(headers[:6])}")
+        if first_sentences:
+            kernel_parts.append(f"**Core claims:** " + " | ".join(first_sentences))
+        if dois:
+            kernel_parts.append(f"**Anchors:** {', '.join(dois[:5])}")
+        kernel_parts.append(f"**Chain:** {chain_label}")
+        return "\n".join(kernel_parts) if kernel_parts else f"**Kernel (minimal):** {content[:300]}..."
 
     kernel_prompt = f"""Extract the HOLOGRAPHIC KERNEL from this content.
 
@@ -641,12 +656,14 @@ def apply_integrity_lock(content: str) -> tuple:
         return content, None
 
     # Four-point entanglement: hash of 4 equidistant content positions
+    # Plus full content hash as 5th point (catches any modification)
     quarter = len(words) // 4
     points = [
         content_hash(words[0])[:4],
         content_hash(words[quarter])[:4],
         content_hash(words[quarter * 2])[:4],
         content_hash(words[quarter * 3])[:4],
+        content_hash(content)[:4],  # full content entanglement
     ]
     ilp = f"ILP-{''.join(points)}"
 
