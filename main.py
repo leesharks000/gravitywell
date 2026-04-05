@@ -125,6 +125,9 @@ class StagedObject(Base):
     # Advisory (PLACEHOLDER heuristics)
     gamma = Column(Float, nullable=True)
 
+    # Privacy layer
+    visibility = Column(String, default="public")  # public | private | hash_only
+
 
 class DepositRecord(Base):
     """
@@ -151,6 +154,14 @@ Base.metadata.create_all(bind=engine)
 try:
     with engine.connect() as conn:
         conn.execute(text("ALTER TABLE api_keys ADD COLUMN zenodo_token TEXT"))
+        conn.commit()
+except Exception:
+    pass  # Column already exists
+
+# Auto-migrate: add visibility column if missing (added in v0.6.0)
+try:
+    with engine.connect() as conn:
+        conn.execute(text("ALTER TABLE staged_objects ADD COLUMN visibility TEXT DEFAULT 'public'"))
         conn.commit()
 except Exception:
     pass  # Column already exists
@@ -208,6 +219,7 @@ class CaptureRequest(BaseModel):
     platform_source: Optional[str] = None
     external_id: Optional[str] = None
     thread_depth: int = 0
+    visibility: Literal["public", "private", "hash_only"] = "public"
 
 
 class CaptureResponse(BaseModel):
@@ -215,6 +227,7 @@ class CaptureResponse(BaseModel):
     chain_id: str
     content_hash: str
     captured_at: datetime
+    visibility: str = "public"
     staged_count: int  # how many undeposited objects now in this chain
 
 
@@ -754,6 +767,16 @@ def build_deposit_document(
     """
     timestamp = datetime.now(timezone.utc).isoformat()
 
+    # Visibility counts
+    vis_public = sum(1 for o in objects if getattr(o, 'visibility', 'public') == 'public')
+    vis_private = sum(1 for o in objects if getattr(o, 'visibility', 'public') == 'private')
+    vis_hash = sum(1 for o in objects if getattr(o, 'visibility', 'public') == 'hash_only')
+    vis_summary = f"{vis_public} public"
+    if vis_private:
+        vis_summary += f" · {vis_private} private"
+    if vis_hash:
+        vis_summary += f" · {vis_hash} gap markers"
+
     header = f"""# {chain.label} — v{version}
 ## Gravity Well Provenance Deposit
 
@@ -762,7 +785,7 @@ def build_deposit_document(
 | Chain | `{chain.id}` |
 | Version | {version} |
 | Concept DOI | {chain.concept_doi or 'pending (first deposit)'} |
-| Objects | {len(objects)} |
+| Objects | {len(objects)} ({vis_summary}) |
 | γ Score | {gamma_score} |
 | SIMs | {sim_info.get('count', 0) if sim_info else 0} markers |
 | Integrity Lock | {integrity_lock or 'none'} |
@@ -851,19 +874,37 @@ manifest becomes operationally continuous with the archived self.
 ---
 """
 
-    # Object manifest
-    manifest_lines = ["## Provenance Chain Objects\n"]
+    # Object manifest — visibility-classified
+    public_count = sum(1 for o in objects if getattr(o, 'visibility', 'public') == 'public')
+    private_count = sum(1 for o in objects if getattr(o, 'visibility', 'public') == 'private')
+    hash_only_count = sum(1 for o in objects if getattr(o, 'visibility', 'public') == 'hash_only')
+
+    manifest_lines = [f"## Provenance Chain Objects\n"]
+    if private_count or hash_only_count:
+        manifest_lines.append(f"*{public_count} public · {private_count} private (encrypted) · {hash_only_count} hash-only (gap markers)*\n")
+
     for i, obj in enumerate(objects, 1):
+        vis = getattr(obj, 'visibility', 'public')
         manifest_lines.append(f"### Object {i}: {obj.external_id or obj.id[:12]}")
         manifest_lines.append(f"- **Type:** {obj.content_type}")
         manifest_lines.append(f"- **Source:** {obj.platform_source or 'direct'}")
         manifest_lines.append(f"- **Hash:** `{obj.content_hash[:16]}...`")
         manifest_lines.append(f"- **Captured:** {obj.captured_at.isoformat()}")
+        manifest_lines.append(f"- **Visibility:** {vis.upper()}")
         if obj.parent_object_id:
             manifest_lines.append(f"- **Parent:** `{obj.parent_object_id[:12]}...`")
         manifest_lines.append(f"- **Thread depth:** {obj.thread_depth}")
         manifest_lines.append("")
-        manifest_lines.append(f"```\n{obj.content}\n```\n")
+
+        if vis == "public":
+            manifest_lines.append(f"```\n{obj.content}\n```\n")
+        elif vis == "private":
+            manifest_lines.append(f"*[PRIVATE — content encrypted. Hash: `{obj.content_hash}`]*\n")
+            manifest_lines.append(f"*Participants and timestamp recorded. Content recoverable with user key only.*\n")
+        elif vis == "hash_only":
+            manifest_lines.append(f"*[GAP MARKER — content not stored. Hash commitment: `{obj.content_hash}`]*\n")
+            manifest_lines.append(f"*User-authorized omission. Provenance chain shows this link existed.*\n")
+
         manifest_lines.append("---\n")
 
     manifest = "\n".join(manifest_lines)
@@ -1265,14 +1306,26 @@ async def capture(
             thread_depth = parent.thread_depth + 1
 
     obj_id = str(uuid.uuid4())
+
+    # Visibility handling
+    stored_content = request.content
+    stored_preview = request.content[:200]
+    if request.visibility == "hash_only":
+        # Store only the hash and metadata — no content
+        stored_content = f"[HASH-ONLY: content not stored. Hash: {content_hash(request.content)}]"
+        stored_preview = "[HASH-ONLY]"
+    # For "private": content arrives pre-encrypted from client (or plaintext if client trusts GW)
+    # GW stores whatever it receives — encryption is the client's responsibility
+
     obj = StagedObject(
         id=obj_id, chain_id=request.chain_id,
         content_hash=content_hash(request.content),
-        content=request.content, content_preview=request.content[:200],
+        content=stored_content, content_preview=stored_preview,
         content_type=request.content_type, metadata_json=request.metadata,
         parent_object_id=request.parent_object_id, thread_depth=thread_depth,
         platform_source=request.platform_source, external_id=request.external_id,
         gamma=calculate_gamma(request.content),
+        visibility=request.visibility,
     )
     db.add(obj)
     db.commit()
@@ -1284,6 +1337,7 @@ async def capture(
     return CaptureResponse(
         object_id=obj_id, chain_id=request.chain_id,
         content_hash=obj.content_hash, captured_at=obj.captured_at,
+        visibility=request.visibility,
         staged_count=staged_count
     )
 
@@ -1349,8 +1403,9 @@ async def deposit(
 
     # === WRAPPING PIPELINE (Arsenal §VI, §VII) ===
 
-    # Concatenate all staged content for wrapping
-    full_content = "\n\n---\n\n".join(o.content for o in objects if o.content)
+    # Concatenate PUBLIC staged content for wrapping (private/hash-only excluded)
+    public_objects = [o for o in objects if getattr(o, 'visibility', 'public') == 'public']
+    full_content = "\n\n---\n\n".join(o.content for o in public_objects if o.content)
 
     # Step 1: Evidence Membrane tagging
     full_content = tag_evidence_membrane(full_content)
