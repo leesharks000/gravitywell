@@ -2645,6 +2645,161 @@ async def drowning_test(content: str = Body(..., embed=True)):
     }
 
 
+# --- Background Auto-Deposit Worker ---
+
+import asyncio
+
+async def auto_deposit_worker():
+    """
+    Background worker that checks all chains with interval-based auto-deposit
+    every 5 minutes. If a chain's interval has elapsed and there are staged
+    objects, executes the deposit server-side.
+
+    This closes the gap where interval triggers only fire during capture —
+    now they fire even when no new content arrives.
+    """
+    while True:
+        await asyncio.sleep(300)  # 5 minutes
+        try:
+            db = SessionLocal()
+            try:
+                # Find chains with interval triggers that are overdue
+                now = datetime.now(timezone.utc)
+                chains = db.query(ProvenanceChain).filter(
+                    ProvenanceChain.auto_deposit_interval.isnot(None)
+                ).all()
+
+                for chain in chains:
+                    try:
+                        # Check if interval has elapsed
+                        if chain.last_auto_deposit:
+                            elapsed = (now - chain.last_auto_deposit).total_seconds() / 60
+                            if elapsed < chain.auto_deposit_interval:
+                                continue
+                        # else: no previous deposit, interval is due
+
+                        # Check for staged objects
+                        staged = db.query(StagedObject).filter(
+                            StagedObject.chain_id == chain.id,
+                            StagedObject.deposited == "false"
+                        ).all()
+
+                        if not staged:
+                            continue
+
+                        # Execute deposit
+                        version = chain.latest_version + 1
+                        bootstrap = chain.bootstrap_manifest
+
+                        # Get previous deposit for tether
+                        prev = db.query(DepositRecord).filter(
+                            DepositRecord.chain_id == chain.id
+                        ).order_by(DepositRecord.version.desc()).first()
+
+                        # Auto-generate tether
+                        tether = {
+                            "state_summary": f"Auto-deposit v{version} (interval: {chain.auto_deposit_interval}min)",
+                            "objects_in_deposit": len(staged),
+                            "trigger": "interval_worker",
+                        }
+
+                        # Wrapping pipeline
+                        public_objects = [o for o in staged if getattr(o, 'visibility', 'public') == 'public']
+                        full_content = "\n\n---\n\n".join(o.content for o in public_objects if o.content)
+
+                        if full_content and len(full_content.split()) >= 100:
+                            narrative = await auto_generate_narrative(staged, chain.label)
+                            full_content = tag_evidence_membrane(full_content)
+                            full_content, caesar_header = apply_caesura(full_content)
+                            full_content, sim_info = inject_sims(full_content, chain.id)
+                            full_content, ilp = apply_integrity_lock(full_content)
+                            kernel = await generate_holographic_kernel(full_content, chain.label)
+                            gamma = calculate_gamma(full_content)
+                        else:
+                            narrative = f"Auto-deposit: {len(staged)} objects from {chain.label}"
+                            caesar_header, sim_info, ilp = {}, {}, None
+                            kernel, gamma = None, calculate_gamma(full_content) if full_content else 0.0
+
+                        bootstrap_hash = None
+                        if bootstrap:
+                            bootstrap_hash = content_hash(json.dumps(bootstrap, sort_keys=True, separators=(',', ':')))
+
+                        doc = build_deposit_document(
+                            chain=chain, objects=staged, version=version,
+                            narrative_summary=narrative, thb=tether,
+                            bootstrap_manifest=bootstrap,
+                            deposit_metadata={"title": f"{chain.label} — auto v{version}"},
+                            holographic_kernel=kernel, integrity_lock=ilp,
+                            sim_info=sim_info, gamma_score=gamma,
+                            caesar_header=caesar_header,
+                        )
+
+                        policy = getattr(chain, 'anchor_policy', 'zenodo')
+                        dep_id = str(uuid.uuid4())
+
+                        if policy == "zenodo":
+                            zen_meta = {
+                                "title": f"{chain.label} — auto v{version}",
+                                "description": f"Interval auto-deposit: {len(staged)} objects",
+                                "filename": f"{chain.label.replace(' ','_').replace('.', '-')}_v{version}.md",
+                                "keywords": ["gravity-well", "auto-deposit", chain.label],
+                                "creators": [{"name": bootstrap.get("identity", {}).get("name", "Anonymous") if bootstrap else "Anonymous"}],
+                            }
+                            user_token = get_zenodo_token_for_key(chain.api_key_id, db)
+                            if chain.latest_record_id:
+                                result = await zenodo_new_version(chain.latest_record_id, doc, zen_meta, zenodo_token=user_token)
+                            else:
+                                result = await zenodo_first_deposit(doc, zen_meta, zenodo_token=user_token)
+
+                            db.add(DepositRecord(
+                                id=dep_id, chain_id=chain.id, version=version,
+                                doi=result.get("doi"), zenodo_record_id=result.get("record_id"),
+                                object_count=len(staged), narrative_summary=narrative,
+                                tether_handoff_block=tether, bootstrap_manifest=bootstrap,
+                                bootstrap_hash=bootstrap_hash, deposit_document=doc,
+                                anchor_policy="zenodo", api_key_id=chain.api_key_id,
+                            ))
+                            if result.get("status") == "confirmed":
+                                chain.latest_version = version
+                                chain.latest_record_id = result.get("record_id")
+                                if not chain.concept_doi:
+                                    chain.concept_doi = result.get("concept_doi")
+                        else:
+                            db.add(DepositRecord(
+                                id=dep_id, chain_id=chain.id, version=version,
+                                doi=None, zenodo_record_id=None,
+                                object_count=len(staged), narrative_summary=narrative,
+                                tether_handoff_block=tether, bootstrap_manifest=bootstrap,
+                                bootstrap_hash=bootstrap_hash, deposit_document=doc,
+                                anchor_policy="local", api_key_id=chain.api_key_id,
+                            ))
+                            chain.latest_version = version
+
+                        for o in staged:
+                            o.deposited = "true"
+                            o.deposit_version = version
+
+                        chain.last_auto_deposit = now
+                        db.commit()
+
+                    except Exception as e:
+                        db.rollback()
+                        # Log but don't crash — one failed chain shouldn't stop the worker
+                        print(f"[auto-deposit-worker] Error on chain {chain.id}: {e}")
+                        continue
+
+            finally:
+                db.close()
+        except Exception as e:
+            print(f"[auto-deposit-worker] Worker cycle error: {e}")
+
+
+@app.on_event("startup")
+async def start_background_worker():
+    """Launch the auto-deposit background worker on server start."""
+    asyncio.create_task(auto_deposit_worker())
+
+
 # --- Landing Page ---
 
 @app.get("/", response_class=FileResponse)
