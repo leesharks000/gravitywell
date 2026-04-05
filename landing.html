@@ -147,6 +147,31 @@ footer a{color:var(--text-dim)}footer a:hover{color:var(--amber)}
   </div>
 </section>
 
+<section>
+  <div class="container">
+    <div class="section-label">Integrations</div>
+    <h2>Works with your model</h2>
+    <div class="layers">
+      <div class="layer-card">
+        <h3>Auto-Archive</h3>
+        <p>Claude (MCP) · ChatGPT (Custom GPT) · OpenClaw / KimiClaw (Python client) · Kimi · Any model with HTTP access</p>
+        <div class="survives">Automated capture and deposit during conversations</div>
+      </div>
+      <div class="layer-card">
+        <h3>Dashboard</h3>
+        <p>Gemini · DeepSeek · Grok · Mistral · Any model without POST access</p>
+        <div class="survives"><a href="/dashboard">Web dashboard</a> — human clicks, model guides</div>
+      </div>
+      <div class="layer-card">
+        <h3>Encrypted</h3>
+        <p>Python client only (AES-256-GCM). Server never sees plaintext. Key stays on your machine.</p>
+        <div class="survives">pip install cryptography requests</div>
+      </div>
+    </div>
+    <p style="font-family:var(--mono);font-size:10px;color:var(--text-dim);margin-top:16px"><a href="https://github.com/leesharks000/gravitywell/blob/main/MODEL_INTEGRATION_GUIDE.md">Integration guide →</a> · MCP server at <code>/mcp/sse</code> · Dashboard at <a href="/dashboard">/dashboard</a> · <a href="/docs">API docs</a></p>
+  </div>
+</section>
+
 <section id="pricing">
   <div class="container">
     <div class="section-label">Pricing</div>
