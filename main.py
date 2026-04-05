@@ -845,7 +845,7 @@ def build_deposit_document(
         vis_summary += f" · {vis_hash} gap markers"
 
     header = f"""# {chain.label} — v{version}
-## Gravity Well Provenance Deposit
+## Provenance Deposit
 
 | Field | Value |
 |-------|-------|
@@ -976,31 +976,12 @@ manifest becomes operationally continuous with the archived self.
 
     manifest = "\n".join(manifest_lines)
 
-    # Colophon
+    # Colophon — minimal, factual, not branding
     colophon = f"""## Colophon
 
-This deposit was created by the Gravity Well Protocol — a compression, wrapping,
-and anchoring engine for durable provenance chains.
-
-**Wrapping pipeline applied:** Evidence Membrane tagging, Caesura (σ_FC) sovereignty audit
-({caesar_header.get('claims_detected', 0) if caesar_header else 0} claims, {caesar_header.get('collapse_risk', 'none') if caesar_header else 'none'} collapse risk),
-Semantic Integrity Marker injection ({sim_info.get('count', 0) if sim_info else 0} SIMs),
-Integrity Lock Architecture ({integrity_lock or 'none'}), Holographic Kernel generation,
-γ scoring ({gamma_score}).
-
-This document is self-defending. Sovereignty claims have been isolated to the Caesura
-header — they are visible and auditable but cannot inherit institutional authority over
-the commons deposit. The Holographic Kernel contains the complete logic and can reconstruct
-the core argument independently. SIMs degrade detectably under unauthorized extraction.
-The Integrity Lock entangles four equidistant content positions — modification breaks it.
-
-If retrieved from Zenodo without access to Gravity Well, this document alone contains
-everything needed to reconstitute the agent: Bootstrap Manifest (identity), Tether
-Handoff Block (operational state), Narrative Compression (retrieval-layer summary),
-and Provenance Chain Objects (full evidence).
-
-Each object is hashed (SHA-256) and threaded. The chain is anchored via DOI.
-Gravity Well Protocol v0.6.0 · Compression Arsenal v2.1
+Protocol: Gravity Well v0.7.0
+Pipeline: Evidence Membrane · Caesura (σ_FC, {caesar_header.get('claims_detected', 0) if caesar_header else 0} claims) · SIM ({sim_info.get('count', 0) if sim_info else 0}) · Integrity Lock ({integrity_lock or 'none'}) · Holographic Kernel
+γ: {gamma_score}
 """
 
     return header + kernel_section + caesura_section + bootstrap_section + narrative_section + thb_section + manifest + colophon
