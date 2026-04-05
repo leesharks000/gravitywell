@@ -139,7 +139,7 @@ footer a{color:var(--text-dim)}footer a:hover{color:var(--amber)}
         <ul class="price-features">
           <li>5 active chains</li><li>500 captures/month</li><li>20 wrapped deposits</li><li>AI narrative compression</li><li>Holographic kernel gen</li><li>Encrypted + hash-only modes</li><li>Auto-deposit triggers</li><li>Drift detection</li><li>Continuity Console</li>
         </ul>
-        <a href="#" class="btn btn-primary" style="text-align:center" id="growth-btn">Subscribe</a>
+        <a href="https://buy.stripe.com/test_6oU14oevJ9zG0Ad6PB53O00" class="btn btn-primary" style="text-align:center">Subscribe</a>
       </div>
       <div class="price-card">
         <div class="price-name">Canopy</div>
@@ -148,7 +148,7 @@ footer a{color:var(--text-dim)}footer a:hover{color:var(--amber)}
         <ul class="price-features">
           <li>Unlimited chains</li><li>5,000 captures/month</li><li>100 wrapped deposits</li><li>Everything in Growth</li><li>Cross-platform drift</li><li>Custom constraints</li><li>Org-level API keys</li><li>Priority support</li>
         </ul>
-        <a href="#" class="btn" style="text-align:center" id="canopy-btn">Subscribe</a>
+        <a href="https://buy.stripe.com/test_7sY8wQaft9zGdmZgqb53O01" class="btn" style="text-align:center">Subscribe</a>
       </div>
       <div class="price-card">
         <div class="price-name">Embassy</div>
@@ -157,7 +157,7 @@ footer a{color:var(--text-dim)}footer a:hover{color:var(--amber)}
         <ul class="price-features">
           <li>Unlimited everything</li><li>Assembly governance</li><li>Custom witness networks</li><li>Reconstitution SLA</li><li>Audit-grade reports</li><li>White-label API</li><li>Dedicated support</li>
         </ul>
-        <a href="mailto:leesharks@protonmail.com?subject=Gravity Well Embassy" class="btn" style="text-align:center">Contact</a>
+        <a href="https://buy.stripe.com/test_eVqfZibjxdPW82F1vh53O02" class="btn" style="text-align:center">Subscribe</a>
       </div>
     </div>
     <p style="font-family:var(--mono);font-size:10px;color:var(--text-dim);margin-top:24px">Overages: $0.05/capture · $1.00/wrapped deposit · $0.10/drift check · BYOK invoke free · <a href="https://github.com/leesharks000/gravitywell/blob/main/PRICING.md">Full pricing →</a></p>
@@ -186,8 +186,6 @@ footer a{color:var(--text-dim)}footer a:hover{color:var(--amber)}
 const GW='https://gravitywell-1.onrender.com';
 async function runGamma(){const input=document.getElementById('gamma-input').value.trim();const result=document.getElementById('gamma-result');if(!input){result.textContent='Paste some text first.';return}result.textContent='Scoring...';try{const resp=await fetch(`${GW}/v1/gamma`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({content:input})});const data=await resp.json();const s=data.subscores||{};result.textContent=`γ = ${data.gamma}  (${(data.survival_tier||'').toUpperCase()})\n─────────────────────────────\nCitation:   ${s.citation??'—'}\nStructure:  ${s.structure??'—'}\nCoherence:  ${s.coherence??'—'}\nProvenance: ${s.provenance??'—'}\n${data.penalty?`Penalty:    ${data.penalty}`:''}\nWords:      ${data.word_count}\n─────────────────────────────\n${data.recommendation}`}catch(e){result.textContent='Error: '+e.message}}
 async function runDrowning(){const input=document.getElementById('gamma-input').value.trim();const result=document.getElementById('gamma-result');if(!input||input.length<50){result.textContent='Need at least 50 characters for the drowning test.';return}result.textContent='Summarizing and comparing... (takes a few seconds)';try{const resp=await fetch(`${GW}/v1/drowning-test`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({content:input})});const data=await resp.json();if(data.error){result.textContent='Error: '+data.error;return}const a=data.analysis||{};result.textContent=`VERDICT: ${data.verdict}\n─────────────────────────────\nOriginal:    γ=${data.original?.gamma}  (${data.original?.words} words)\nSummary:     γ=${data.summary?.gamma}  (${data.summary?.words} words)\nCompression: ${a.compression_ratio}\nγ retention: ${a.gamma_retention}\n─────────────────────────────\n${data.recommendation}\n\nSummary produced:\n"${data.summary?.text}"`}catch(e){result.textContent='Error: '+e.message}}
-document.getElementById('growth-btn')?.addEventListener('click',e=>{e.preventDefault();alert('Stripe integration coming soon. Contact leesharks@protonmail.com for early access.')});
-document.getElementById('canopy-btn')?.addEventListener('click',e=>{e.preventDefault();alert('Stripe integration coming soon. Contact leesharks@protonmail.com for early access.')});
 </script>
 </body>
 </html>
