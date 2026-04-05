@@ -1549,23 +1549,124 @@ async def capture(
     auto_deposit_result = None
     if auto_deposit_triggered:
         try:
-            # Build a minimal deposit request
-            from starlette.concurrency import run_in_threadpool
-            dep_request = DepositRequest(
-                chain_id=request.chain_id,
-                auto_compress=True,
-                deposit_metadata={"title": f"{chain.label} — auto-deposit", "description": f"Auto-triggered deposit ({staged_count} objects)"},
-            )
-            # We can't easily call the async deposit endpoint from here,
-            # so we mark the trigger and let the response signal the client
+            # === SERVER-SIDE AUTO-DEPOSIT ===
+            # Gravity Well preserves. When the threshold is hit, we deposit now.
+            auto_objects = db.query(StagedObject).filter(
+                StagedObject.chain_id == request.chain_id,
+                StagedObject.deposited == "false"
+            ).order_by(StagedObject.captured_at).all()
+
+            if auto_objects:
+                auto_version = chain.latest_version + 1
+
+                # Get the most recent bootstrap manifest from previous deposits
+                prev_deposit = db.query(DepositRecord).filter(
+                    DepositRecord.chain_id == request.chain_id
+                ).order_by(DepositRecord.version.desc()).first()
+                auto_bootstrap = prev_deposit.bootstrap_manifest if prev_deposit else None
+                auto_thb = prev_deposit.tether_handoff_block if prev_deposit else None
+
+                # Narrative compression
+                auto_narrative = await auto_generate_narrative(auto_objects, chain.label)
+
+                # Wrapping pipeline
+                auto_public = [o for o in auto_objects if getattr(o, 'visibility', 'public') == 'public']
+                auto_content = "\n\n---\n\n".join(o.content for o in auto_public if o.content)
+
+                if auto_content:
+                    auto_content = tag_evidence_membrane(auto_content)
+                    auto_content, auto_caesar = apply_caesura(auto_content)
+                    auto_content, auto_sims = inject_sims(auto_content, chain.id)
+                    auto_content, auto_ilp = apply_integrity_lock(auto_content)
+                    auto_kernel = await generate_holographic_kernel(auto_content, chain.label)
+                    auto_gamma = calculate_gamma(auto_content)
+                else:
+                    auto_caesar, auto_sims, auto_ilp = {}, {}, None
+                    auto_kernel, auto_gamma = None, 0.0
+
+                auto_bootstrap_hash = None
+                if auto_bootstrap:
+                    auto_bootstrap_hash = content_hash(json.dumps(auto_bootstrap, sort_keys=True, separators=(',', ':')))
+
+                auto_doc = build_deposit_document(
+                    chain=chain, objects=auto_objects, version=auto_version,
+                    narrative_summary=auto_narrative, thb=auto_thb,
+                    bootstrap_manifest=auto_bootstrap,
+                    deposit_metadata={"title": f"{chain.label} — auto-deposit v{auto_version}"},
+                    holographic_kernel=auto_kernel,
+                    integrity_lock=auto_ilp,
+                    sim_info=auto_sims,
+                    gamma_score=auto_gamma,
+                    caesar_header=auto_caesar,
+                )
+
+                policy = getattr(chain, 'anchor_policy', 'zenodo')
+                auto_deposit_id = str(uuid.uuid4())
+
+                if policy == "zenodo":
+                    zen_meta = {
+                        "title": f"{chain.label} — auto-deposit v{auto_version}",
+                        "description": f"Auto-deposit: {len(auto_objects)} objects",
+                        "filename": f"{chain.label.replace(' ', '_')}_v{auto_version}.md",
+                        "keywords": ["gravity-well", "auto-deposit", chain.label],
+                        "creators": [{"name": "Sharks, Lee"}],
+                    }
+                    user_token = get_zenodo_token_for_key(api_key_id, db)
+                    if chain.latest_record_id:
+                        zen_result = await zenodo_new_version(chain.latest_record_id, auto_doc, zen_meta, zenodo_token=user_token)
+                    else:
+                        zen_result = await zenodo_first_deposit(auto_doc, zen_meta, zenodo_token=user_token)
+
+                    db.add(DepositRecord(
+                        id=auto_deposit_id, chain_id=chain.id, version=auto_version,
+                        doi=zen_result.get("doi"), zenodo_record_id=zen_result.get("record_id"),
+                        object_count=len(auto_objects), narrative_summary=auto_narrative,
+                        tether_handoff_block=auto_thb, bootstrap_manifest=auto_bootstrap,
+                        bootstrap_hash=auto_bootstrap_hash, deposit_document=auto_doc,
+                        anchor_policy="zenodo", api_key_id=api_key_id,
+                    ))
+                    if zen_result.get("status") == "confirmed":
+                        chain.latest_version = auto_version
+                        chain.latest_record_id = zen_result.get("record_id")
+                        if not chain.concept_doi:
+                            chain.concept_doi = zen_result.get("concept_doi")
+                            chain.concept_record_id = zen_result.get("concept_record_id")
+                else:
+                    # Local deposit
+                    db.add(DepositRecord(
+                        id=auto_deposit_id, chain_id=chain.id, version=auto_version,
+                        doi=None, zenodo_record_id=None,
+                        object_count=len(auto_objects), narrative_summary=auto_narrative,
+                        tether_handoff_block=auto_thb, bootstrap_manifest=auto_bootstrap,
+                        bootstrap_hash=auto_bootstrap_hash, deposit_document=auto_doc,
+                        anchor_policy="local", api_key_id=api_key_id,
+                    ))
+                    chain.latest_version = auto_version
+
+                # Mark objects deposited
+                for o in auto_objects:
+                    o.deposited = "true"
+                    o.deposit_version = auto_version
+
+                chain.last_auto_deposit = datetime.now(timezone.utc)
+                db.commit()
+
+                auto_deposit_result = {
+                    "triggered": True,
+                    "executed": True,
+                    "reason": "threshold" if (chain.auto_deposit_threshold and staged_count >= chain.auto_deposit_threshold) else "interval",
+                    "version": auto_version,
+                    "objects_deposited": len(auto_objects),
+                    "doi": zen_result.get("doi") if policy == "zenodo" else None,
+                    "anchor_policy": policy,
+                }
+        except Exception as e:
+            # Auto-deposit failed — don't crash the capture
             auto_deposit_result = {
                 "triggered": True,
-                "reason": "threshold" if chain.auto_deposit_threshold else "interval",
-                "staged_count": staged_count,
-                "action": "Client should call POST /v1/deposit to complete. Server-side auto-deposit coming in v0.7.0.",
+                "executed": False,
+                "error": str(e)[:200],
             }
-        except Exception:
-            pass
 
     return CaptureResponse(
         object_id=obj_id, chain_id=request.chain_id,
