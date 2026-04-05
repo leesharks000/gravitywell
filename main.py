@@ -2652,31 +2652,26 @@ import asyncio
 # --- MCP Server (Model Context Protocol) ---
 
 from mcp_server import mcp_server, sse_transport
-from starlette.requests import Request
-from starlette.routing import Route
+from starlette.routing import Route, Mount
 
 
-async def handle_mcp_sse(request: Request):
+async def handle_mcp_sse(scope, receive, send):
     """SSE endpoint — clients connect here to establish MCP session."""
-    async with sse_transport.connect_sse(
-        request.scope, request.receive, request._send
-    ) as streams:
+    async with sse_transport.connect_sse(scope, receive, send) as streams:
         await mcp_server.run(
             streams[0], streams[1],
             mcp_server.create_initialization_options()
         )
 
 
-async def handle_mcp_messages(request: Request):
+async def handle_mcp_messages(scope, receive, send):
     """POST endpoint — clients send JSON-RPC requests here."""
-    await sse_transport.handle_post_message(
-        request.scope, request.receive, request._send
-    )
+    await sse_transport.handle_post_message(scope, receive, send)
 
 
-# Mount MCP routes
-app.routes.append(Route("/mcp/sse", endpoint=handle_mcp_sse))
-app.routes.append(Route("/mcp/messages/", endpoint=handle_mcp_messages, methods=["POST"]))
+# Mount MCP routes as raw ASGI apps
+app.router.routes.append(Route("/mcp/sse", app=handle_mcp_sse))
+app.router.routes.append(Route("/mcp/messages/", app=handle_mcp_messages, methods=["POST"]))
 
 async def auto_deposit_worker():
     """
