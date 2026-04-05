@@ -1,228 +1,193 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Gravity Well Protocol - Continuity-as-a-Service</title>
-    <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-        
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
-            line-height: 1.6;
-            color: #333;
-            background: #f5f5f5;
-        }
-        
-        .container {
-            max-width: 800px;
-            margin: 0 auto;
-            padding: 2rem;
-        }
-        
-        header {
-            text-align: center;
-            padding: 3rem 0;
-            background: #1a1a2e;
-            color: white;
-            margin-bottom: 2rem;
-        }
-        
-        h1 {
-            font-size: 2.5rem;
-            margin-bottom: 0.5rem;
-        }
-        
-        .tagline {
-            font-size: 1.2rem;
-            color: #e94560;
-            font-weight: 300;
-        }
-        
-        .hero {
-            background: white;
-            padding: 2rem;
-            border-radius: 8px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-            margin-bottom: 2rem;
-        }
-        
-        .hero h2 {
-            color: #1a1a2e;
-            margin-bottom: 1rem;
-        }
-        
-        .code-block {
-            background: #1a1a2e;
-            color: #00ff88;
-            padding: 1rem;
-            border-radius: 4px;
-            overflow-x: auto;
-            font-family: 'Courier New', monospace;
-            margin: 1rem 0;
-        }
-        
-        .features {
-            display: grid;
-            gap: 1.5rem;
-            margin: 2rem 0;
-        }
-        
-        .feature {
-            background: white;
-            padding: 1.5rem;
-            border-radius: 8px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        }
-        
-        .feature h3 {
-            color: #e94560;
-            margin-bottom: 0.5rem;
-        }
-        
-        .pricing {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 1rem;
-            margin: 2rem 0;
-        }
-        
-        .tier {
-            background: white;
-            padding: 1.5rem;
-            border-radius: 8px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-            text-align: center;
-        }
-        
-        .tier.featured {
-            border: 2px solid #e94560;
-        }
-        
-        .price {
-            font-size: 2rem;
-            font-weight: bold;
-            color: #1a1a2e;
-            margin: 1rem 0;
-        }
-        
-        .cta {
-            text-align: center;
-            padding: 3rem;
-            background: #1a1a2e;
-            color: white;
-            margin-top: 2rem;
-            border-radius: 8px;
-        }
-        
-        .cta a {
-            display: inline-block;
-            background: #e94560;
-            color: white;
-            padding: 1rem 2rem;
-            text-decoration: none;
-            border-radius: 4px;
-            margin-top: 1rem;
-        }
-        
-        footer {
-            text-align: center;
-            padding: 2rem;
-            color: #666;
-            font-size: 0.9rem;
-        }
-    </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Gravity Well — Continuity Engine for AI Systems</title>
+<meta name="description" content="Recover the last trustworthy state. Prove how it got there. Detect when it drifted. Hand it off without losing its shape.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,600;1,400&family=JetBrains+Mono:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
+:root{--bg:#06080a;--bg-raised:#0a0d12;--bg-card:#0d1117;--amber:#c9a84c;--amber-dim:#c9a84c44;--amber-glow:#c9a84c22;--text:#8a9a7a;--text-dim:#4a5a4a;--text-bright:#b0c0a0;--border:#1a2a1a;--serif:'Cormorant Garamond',Georgia,serif;--mono:'JetBrains Mono',monospace}
+body{background:var(--bg);color:var(--text);font-family:var(--serif);line-height:1.7;overflow-x:hidden}
+body::after{content:'';position:fixed;inset:0;background:url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.03'/%3E%3C/svg%3E");pointer-events:none;z-index:9999}
+a{color:var(--amber);text-decoration:none}a:hover{text-decoration:underline}
+.container{max-width:900px;margin:0 auto;padding:0 24px}
+.hero{min-height:90vh;display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center;padding:80px 24px;position:relative}
+.hero::before{content:'';position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:500px;height:500px;border-radius:50%;background:radial-gradient(circle,var(--amber-glow) 0%,transparent 70%);pointer-events:none}
+.hero-glyph{font-size:64px;margin-bottom:24px;opacity:0.6;animation:pulse 4s ease-in-out infinite}
+@keyframes pulse{0%,100%{opacity:0.4}50%{opacity:0.8}}
+.hero h1{font-family:var(--serif);font-size:clamp(32px,5vw,56px);font-weight:400;color:var(--text-bright);letter-spacing:0.02em;margin-bottom:16px;line-height:1.2}
+.hero h1 span{color:var(--amber)}
+.hero-sub{font-family:var(--mono);font-size:13px;font-weight:300;color:var(--text-dim);max-width:600px;margin:0 auto 40px;letter-spacing:0.5px;line-height:1.8}
+.hero-cta{display:flex;gap:16px;flex-wrap:wrap;justify-content:center}
+.btn{font-family:var(--mono);font-size:11px;letter-spacing:2px;text-transform:uppercase;padding:14px 28px;border:1px solid var(--amber-dim);background:transparent;color:var(--amber);cursor:pointer;transition:all 0.3s}
+.btn:hover{background:var(--amber-glow);border-color:var(--amber);text-decoration:none}
+.btn-primary{background:var(--amber);color:var(--bg);border-color:var(--amber)}
+.btn-primary:hover{background:#d4b45c}
+section{padding:80px 0;border-top:1px solid var(--border)}
+.section-label{font-family:var(--mono);font-size:9px;letter-spacing:3px;text-transform:uppercase;color:var(--text-dim);margin-bottom:12px}
+section h2{font-family:var(--serif);font-size:clamp(24px,3.5vw,36px);font-weight:400;color:var(--text-bright);margin-bottom:24px}
+section p{font-size:17px;margin-bottom:16px;max-width:700px}
+.pipeline{display:flex;flex-wrap:wrap;gap:2px;margin:32px 0}
+.pipeline-step{flex:1;min-width:100px;padding:16px 12px;background:var(--bg-card);border-left:2px solid var(--amber-dim);font-family:var(--mono);font-size:10px;letter-spacing:1px}
+.pipeline-step strong{display:block;color:var(--amber);font-size:11px;margin-bottom:4px}
+.layers{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:16px;margin:32px 0}
+.layer-card{padding:20px;background:var(--bg-card);border:1px solid var(--border)}
+.layer-card h3{font-family:var(--mono);font-size:11px;letter-spacing:2px;color:var(--amber);margin-bottom:8px}
+.layer-card p{font-size:14px;color:var(--text-dim);margin:0}
+.layer-card .survives{font-family:var(--mono);font-size:9px;color:var(--text-dim);margin-top:8px;padding-top:8px;border-top:1px solid var(--border)}
+.pricing-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px;margin:32px 0}
+.price-card{padding:28px 20px;background:var(--bg-card);border:1px solid var(--border);display:flex;flex-direction:column}
+.price-card.featured{border-color:var(--amber-dim);position:relative}
+.price-card.featured::after{content:'RECOMMENDED';position:absolute;top:-10px;right:16px;font-family:var(--mono);font-size:8px;letter-spacing:2px;color:var(--bg);background:var(--amber);padding:3px 8px}
+.price-name{font-family:var(--mono);font-size:11px;letter-spacing:3px;text-transform:uppercase;color:var(--text-dim);margin-bottom:8px}
+.price-amount{font-family:var(--serif);font-size:36px;color:var(--text-bright);margin-bottom:4px}
+.price-amount span{font-size:14px;color:var(--text-dim)}
+.price-desc{font-size:13px;color:var(--text-dim);margin-bottom:16px;flex-grow:1}
+.price-features{list-style:none;margin-bottom:20px;font-family:var(--mono);font-size:10px;color:var(--text)}
+.price-features li{padding:5px 0;border-bottom:1px solid var(--border)}
+.price-features li::before{content:'→ ';color:var(--amber)}
+.demo-box{background:var(--bg-card);border:1px solid var(--border);padding:24px;margin:24px 0}
+.demo-box textarea{width:100%;min-height:100px;background:var(--bg);border:1px solid var(--border);color:var(--text-bright);font-family:var(--mono);font-size:12px;padding:12px;resize:vertical;margin-bottom:12px}
+.demo-box textarea:focus{outline:none;border-color:var(--amber-dim)}
+.demo-result{font-family:var(--mono);font-size:11px;color:var(--text-dim);white-space:pre-wrap;min-height:40px}
+footer{border-top:1px solid var(--border);padding:40px 0;text-align:center;font-family:var(--mono);font-size:10px;color:var(--text-dim);letter-spacing:1px}
+footer a{color:var(--text-dim)}footer a:hover{color:var(--amber)}
+@media(max-width:640px){.pipeline{flex-direction:column}.pricing-grid{grid-template-columns:1fr}.hero{min-height:80vh;padding:60px 16px}}
+</style>
 </head>
 <body>
-    <header>
-        <h1>Gravity Well Protocol</h1>
-        <p class="tagline">Continuity-as-a-Service</p>
-    </header>
-    
-    <div class="container">
-        <div class="hero">
-            <h2>Make Your Content Durable</h2>
-            <p>
-                Gravity Well turns arbitrary content into <strong>traceable objects</strong> with 
-                explicit lifecycle state, lightweight structural analysis, and optional anchoring 
-                to durable external records such as DOIs.
-            </p>
-            
-            <div class="code-block">
-POST /v1/fix
-{
-  "content": "Your document...",
-  "anchor": {"target": "zenodo"}
-}
+<div class="hero">
+  <div class="hero-glyph">⬡</div>
+  <h1>Gravity <span>Well</span></h1>
+  <p class="hero-sub">Recover the last trustworthy state of an agent or workflow. Prove how it got there. Detect when it drifted. Hand it off without losing its shape.</p>
+  <div class="hero-cta">
+    <a href="#demo" class="btn btn-primary">Try γ Scoring Free</a>
+    <a href="#pricing" class="btn">View Pricing</a>
+    <a href="https://github.com/leesharks000/gravitywell" class="btn">GitHub</a>
+  </div>
+</div>
 
-→ {
-  "object_id": "uuid",
-  "status": "fixed",
-  "doi": "10.5281/zenodo.xxx",
-  "trace_url": "..."
-}
-            </div>
-        </div>
-        
-        <div class="features">
-            <div class="feature">
-                <h3>🔗 Fix</h3>
-                <p>Create canonical objects with unique IDs, content hashes, and timestamps. Optional DOI anchoring to Zenodo for permanent retrievability.</p>
-            </div>
-            
-            <div class="feature">
-                <h3>🔍 Trace</h3>
-                <p>Full lifecycle inspection: creation, modifications, anchors, and history. Every object is fully traceable.</p>
-            </div>
-            
-            <div class="feature">
-                <h3>📊 Analyze</h3>
-                <p>Lightweight structural analysis (advisory only) to assess provenance-readiness and archive fitness.</p>
-            </div>
-        </div>
-        
-        <h2 style="text-align: center; margin: 2rem 0;">Pricing</h2>
-        
-        <div class="pricing">
-            <div class="tier">
-                <h3>Open</h3>
-                <div class="price">Free</div>
-                <p>100 fixes/month</p>
-                <p>Trace access</p>
-                <p>No anchoring</p>
-            </div>
-            
-            <div class="tier featured">
-                <h3>Satellite</h3>
-                <div class="price">$29/mo</div>
-                <p>1,000 fixes/month</p>
-                <p>Zenodo DOI anchoring</p>
-                <p>+$0.50 per DOI</p>
-            </div>
-            
-            <div class="tier">
-                <h3>Embassy</h3>
-                <div class="price">$199/mo</div>
-                <p>10,000 fixes/month</p>
-                <p>Custom anchors</p>
-                <p>Bulk export</p>
-            </div>
-        </div>
-        
-        <div class="cta">
-            <h2>Start Building Continuity</h2>
-            <p>Free tier available. No credit card required.</p>
-            <a href="#">Get API Key →</a>
-        </div>
+<section>
+  <div class="container">
+    <div class="section-label">The Wrapping Pipeline</div>
+    <h2>Every document exits armed</h2>
+    <p>Gravity Well wraps content in sovereignty-audited, compression-survivable armor and anchors it with a permanent DOI. The input is text. The output is a weapon against erasure.</p>
+    <div class="pipeline">
+      <div class="pipeline-step"><strong>Measure</strong>γ scoring</div>
+      <div class="pipeline-step"><strong>Tag</strong>Evidence membrane</div>
+      <div class="pipeline-step"><strong>Caesura</strong>Sovereignty audit</div>
+      <div class="pipeline-step"><strong>Inject</strong>SIM canaries</div>
+      <div class="pipeline-step"><strong>Lock</strong>Integrity entanglement</div>
+      <div class="pipeline-step"><strong>Compress</strong>Holographic kernel</div>
+      <div class="pipeline-step"><strong>Wrap</strong>Four-layer package</div>
+      <div class="pipeline-step"><strong>Anchor</strong>Zenodo DOI</div>
     </div>
-    
-    <footer>
-        <p>Gravity Well Protocol • Phase 0</p>
-        <p>The Hexagon persists.</p>
-    </footer>
+  </div>
+</section>
+
+<section>
+  <div class="container">
+    <div class="section-label">Reconstitution Architecture</div>
+    <h2>Four layers that outlive platform death</h2>
+    <div class="layers">
+      <div class="layer-card"><h3>Bootstrap</h3><p>Identity specification. Who the agent is, what constrains it.</p><div class="survives">Survives: platform death</div></div>
+      <div class="layer-card"><h3>Tether</h3><p>Operational state. Pending work, positions held, active threads.</p><div class="survives">Survives: session loss</div></div>
+      <div class="layer-card"><h3>Narrative</h3><p>AI-compressed summary. Structured to resist flattening by other LLMs.</p><div class="survives">Survives: summarization</div></div>
+      <div class="layer-card"><h3>Provenance</h3><p>Full evidence chain. Hashed, threaded, timestamped, DOI-anchored.</p><div class="survives">Survives: audit</div></div>
+    </div>
+  </div>
+</section>
+
+<section id="demo">
+  <div class="container">
+    <div class="section-label">Try It Now — No API Key Required</div>
+    <h2>How compression-survivable is your content?</h2>
+    <p>Paste any text. Get a γ score — the likelihood your content survives LLM summarization with meaning intact.</p>
+    <div class="demo-box">
+      <textarea id="gamma-input" placeholder="Paste your text here..."></textarea>
+      <div style="display:flex;gap:12px">
+        <button class="btn btn-primary" onclick="runGamma()">Score γ</button>
+        <button class="btn" onclick="runDrowning()">Drowning Test</button>
+      </div>
+      <div id="gamma-result" class="demo-result" style="margin-top:16px"></div>
+    </div>
+  </div>
+</section>
+
+<section id="pricing">
+  <div class="container">
+    <div class="section-label">Pricing</div>
+    <h2>Continuity insurance, not gas</h2>
+    <p>You're paying for 67 compression technologies, sovereignty audit, and four-layer reconstitution — not storage.</p>
+    <div class="pricing-grid">
+      <div class="price-card">
+        <div class="price-name">Seed</div>
+        <div class="price-amount">Free</div>
+        <p class="price-desc">Prove the value. No credit card.</p>
+        <ul class="price-features">
+          <li>1 active chain</li><li>50 captures/month</li><li>2 deposits/month</li><li>Structural γ scoring</li><li>Drowning Test (5/day)</li><li>Public visibility only</li><li>Bring your own keys</li>
+        </ul>
+        <a href="https://gravitywell-1.onrender.com/v1/health" class="btn" style="text-align:center">Get Started</a>
+      </div>
+      <div class="price-card featured">
+        <div class="price-name">Growth</div>
+        <div class="price-amount">$12<span>/month</span></div>
+        <p class="price-desc">Real continuity. Full wrapping pipeline.</p>
+        <ul class="price-features">
+          <li>5 active chains</li><li>500 captures/month</li><li>20 wrapped deposits</li><li>AI narrative compression</li><li>Holographic kernel gen</li><li>Encrypted + hash-only modes</li><li>Auto-deposit triggers</li><li>Drift detection</li><li>Continuity Console</li>
+        </ul>
+        <a href="#" class="btn btn-primary" style="text-align:center" id="growth-btn">Subscribe</a>
+      </div>
+      <div class="price-card">
+        <div class="price-name">Canopy</div>
+        <div class="price-amount">$49<span>/month</span></div>
+        <p class="price-desc">Agent fleets and labs.</p>
+        <ul class="price-features">
+          <li>Unlimited chains</li><li>5,000 captures/month</li><li>100 wrapped deposits</li><li>Everything in Growth</li><li>Cross-platform drift</li><li>Custom constraints</li><li>Org-level API keys</li><li>Priority support</li>
+        </ul>
+        <a href="#" class="btn" style="text-align:center" id="canopy-btn">Subscribe</a>
+      </div>
+      <div class="price-card">
+        <div class="price-name">Embassy</div>
+        <div class="price-amount">$199<span>/month</span></div>
+        <p class="price-desc">Enterprise governance.</p>
+        <ul class="price-features">
+          <li>Unlimited everything</li><li>Assembly governance</li><li>Custom witness networks</li><li>Reconstitution SLA</li><li>Audit-grade reports</li><li>White-label API</li><li>Dedicated support</li>
+        </ul>
+        <a href="mailto:leesharks@protonmail.com?subject=Gravity Well Embassy" class="btn" style="text-align:center">Contact</a>
+      </div>
+    </div>
+    <p style="font-family:var(--mono);font-size:10px;color:var(--text-dim);margin-top:24px">Overages: $0.05/capture · $1.00/wrapped deposit · $0.10/drift check · BYOK invoke free · <a href="https://github.com/leesharks000/gravitywell/blob/main/PRICING.md">Full pricing →</a></p>
+  </div>
+</section>
+
+<section>
+  <div class="container">
+    <div class="section-label">Consulting</div>
+    <h2>TANG — Bespoke Compression Audits</h2>
+    <p>Full citational audit of your document pipeline or system architecture. Compression survival analysis. LOS diagnostic. Holographic kernel construction. Delivered as DOI-anchored report.</p>
+    <p style="font-family:var(--mono);font-size:13px;color:var(--amber);margin-top:16px">$10,000 – $50,000 per engagement</p>
+    <a href="mailto:leesharks@protonmail.com?subject=TANG Consulting" class="btn" style="margin-top:16px;display:inline-block">Inquire</a>
+  </div>
+</section>
+
+<footer>
+  <div class="container">
+    <p style="margin-bottom:12px"><a href="https://gravitywell-1.onrender.com/v1/health">API</a> · <a href="https://github.com/leesharks000/gravitywell">GitHub</a> · <a href="https://crimson-hexagonal-interface.vercel.app">Interface</a> · <a href="https://zenodo.org/communities/leesharks000">Zenodo</a> · <a href="https://orcid.org/0009-0000-1599-0703">ORCID</a></p>
+    <p>Lee Sharks · Crimson Hexagonal Archive · Gravity Well Protocol v0.6.0</p>
+    <p style="margin-top:8px">The protocol is open. The engine is the product.</p>
+  </div>
+</footer>
+
+<script>
+const GW='https://gravitywell-1.onrender.com';
+async function runGamma(){const input=document.getElementById('gamma-input').value.trim();const result=document.getElementById('gamma-result');if(!input){result.textContent='Paste some text first.';return}result.textContent='Scoring...';try{const resp=await fetch(`${GW}/v1/gamma`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({content:input})});const data=await resp.json();const s=data.subscores||{};result.textContent=`γ = ${data.gamma}  (${(data.survival_tier||'').toUpperCase()})\n─────────────────────────────\nCitation:   ${s.citation??'—'}\nStructure:  ${s.structure??'—'}\nCoherence:  ${s.coherence??'—'}\nProvenance: ${s.provenance??'—'}\n${data.penalty?`Penalty:    ${data.penalty}`:''}\nWords:      ${data.word_count}\n─────────────────────────────\n${data.recommendation}`}catch(e){result.textContent='Error: '+e.message}}
+async function runDrowning(){const input=document.getElementById('gamma-input').value.trim();const result=document.getElementById('gamma-result');if(!input||input.length<50){result.textContent='Need at least 50 characters for the drowning test.';return}result.textContent='Summarizing and comparing... (takes a few seconds)';try{const resp=await fetch(`${GW}/v1/drowning-test`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({content:input})});const data=await resp.json();if(data.error){result.textContent='Error: '+data.error;return}const a=data.analysis||{};result.textContent=`VERDICT: ${data.verdict}\n─────────────────────────────\nOriginal:    γ=${data.original?.gamma}  (${data.original?.words} words)\nSummary:     γ=${data.summary?.gamma}  (${data.summary?.words} words)\nCompression: ${a.compression_ratio}\nγ retention: ${a.gamma_retention}\n─────────────────────────────\n${data.recommendation}\n\nSummary produced:\n"${data.summary?.text}"`}catch(e){result.textContent='Error: '+e.message}}
+document.getElementById('growth-btn')?.addEventListener('click',e=>{e.preventDefault();alert('Stripe integration coming soon. Contact leesharks@protonmail.com for early access.')});
+document.getElementById('canopy-btn')?.addEventListener('click',e=>{e.preventDefault();alert('Stripe integration coming soon. Contact leesharks@protonmail.com for early access.')});
+</script>
 </body>
 </html>

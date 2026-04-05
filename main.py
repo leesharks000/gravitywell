@@ -14,6 +14,7 @@ Flow: Capture → Compress → Anchor
 from fastapi import FastAPI, HTTPException, Depends, Header, Body
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 from typing import Optional, List, Dict, Any, Literal
 from datetime import datetime, timezone
@@ -2212,6 +2213,14 @@ async def drowning_test(content: str = Body(..., embed=True)):
         },
         "recommendation": "Content resists algorithmic liquidation" if survived else "Content is vulnerable to compression — consider adding structural markers, DOI anchors, and provenance references before depositing",
     }
+
+
+# --- Landing Page ---
+
+@app.get("/", response_class=FileResponse)
+async def landing_page():
+    """Serve the landing page at root."""
+    return FileResponse("landing.html", media_type="text/html")
 
 
 # --- Health & Schema ---
