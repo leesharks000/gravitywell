@@ -207,7 +207,7 @@ except Exception:
     pass
 
 # Auto-migrate: add bootstrap_manifest and bootstrap_hash to chains (added in v0.7.0)
-for col in ["bootstrap_manifest JSON", "bootstrap_hash TEXT"]:
+for col in ["bootstrap_manifest JSON", "bootstrap_hash TEXT", "staged_count INTEGER DEFAULT 0"]:
     try:
         with engine.connect() as conn:
             conn.execute(text(f"ALTER TABLE provenance_chains ADD COLUMN {col}"))
