@@ -82,13 +82,13 @@ class ApiKey(Base):
 
 class ProvenanceChain(Base):
     """
-    A provenance chain = one concept DOI on Zenodo.
+    A provenance chain = one concept DOI on Zenodo (or local).
     Each agent, thread, or continuity stream gets one chain.
     Versions accumulate as deposits are made.
     """
     __tablename__ = "provenance_chains"
     id = Column(String, primary_key=True)
-    label = Column(String, index=True)                # e.g. "crimsonhexagon-moltbook"
+    label = Column(String, index=True)                # e.g. "GW.SOIL.continuity"
     concept_doi = Column(String, nullable=True)        # Zenodo concept DOI (set after first deposit)
     concept_record_id = Column(String, nullable=True)  # Zenodo concept record ID
     latest_record_id = Column(String, nullable=True)   # Latest published record ID (for newversion)
@@ -97,11 +97,16 @@ class ProvenanceChain(Base):
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     metadata_json = Column(JSON, default={})           # Chain-level metadata
 
+    # Identity — stored once, included on every deposit automatically
+    bootstrap_manifest = Column(JSON, nullable=True)   # The agent's identity spec
+    bootstrap_hash = Column(String, nullable=True)     # Hash for drift detection
+
     # Auto-deposit triggers
     auto_deposit_threshold = Column(Integer, nullable=True)   # Deposit after N captures
     auto_deposit_interval = Column(Integer, nullable=True)    # Deposit every N minutes
     last_auto_deposit = Column(DateTime, nullable=True)       # Timestamp of last auto-deposit
     anchor_policy = Column(String, default="zenodo")          # zenodo | local (no DOI, stays in GW)
+    staged_count = Column(Integer, default=0)
 
 
 class StagedObject(Base):
@@ -201,6 +206,15 @@ try:
 except Exception:
     pass
 
+# Auto-migrate: add bootstrap_manifest and bootstrap_hash to chains (added in v0.7.0)
+for col in ["bootstrap_manifest JSON", "bootstrap_hash TEXT"]:
+    try:
+        with engine.connect() as conn:
+            conn.execute(text(f"ALTER TABLE provenance_chains ADD COLUMN {col}"))
+            conn.commit()
+    except Exception:
+        pass
+
 # Auto-migrate: add deposit_document and anchor_policy to deposit_records (added in v0.7.0)
 for col in ["deposit_document TEXT", "anchor_policy TEXT DEFAULT 'zenodo'"]:
     try:
@@ -278,12 +292,13 @@ class CaptureResponse(BaseModel):
 
 
 class ChainCreateRequest(BaseModel):
-    """Create a new provenance chain (= future concept DOI)."""
-    label: str = Field(..., min_length=1, max_length=200)
+    """Create a new provenance chain."""
+    label: Optional[str] = None  # If omitted, auto-generated from bootstrap identity
     metadata: Dict[str, Any] = Field(default_factory=dict)
     auto_deposit_threshold: Optional[int] = None   # Auto-deposit after N captures
     auto_deposit_interval: Optional[int] = None    # Auto-deposit every N minutes
-    anchor_policy: Literal["zenodo", "local"] = "zenodo"  # zenodo = DOI-anchored, local = GW-only
+    anchor_policy: Literal["zenodo", "local"] = "local"  # local by default — DOIs are opt-in
+    bootstrap_manifest: Optional[Dict[str, Any]] = None  # Identity spec — stored on chain, auto-included
 
 
 class ChainResponse(BaseModel):
@@ -609,9 +624,12 @@ async def generate_holographic_kernel(content: str, chain_label: str) -> str:
     If the full document is lost, this kernel alone reconstitutes
     the core claim, provenance, and architecture.
     """
-    if not ANTHROPIC_API_KEY:
+    import re
+
+    # For very short content, use deterministic extraction — not worth API call
+    word_count = len(content.split())
+    if word_count < 100 or not ANTHROPIC_API_KEY:
         # Deterministic fallback: extract structural skeleton
-        import re
         dois = re.findall(r'10\.\d{4,}/[^\s\)]+', content)
         headers = re.findall(r'^#{1,6}\s+(.+)$', content, re.M)
         # First sentence of each paragraph
@@ -1024,6 +1042,16 @@ async def auto_generate_narrative(objects: list, chain_label: str) -> str:
             f"Total corpus: ~{total_words} words."
         )
 
+    # Skip AI compression for very short content — not worth the tokens
+    if total_words < 100:
+        return (
+            f"Structural summary for {chain_label}: "
+            f"{len(objects)} objects captured ({type_summary}) "
+            f"from {platform_summary}. "
+            f"Total corpus: ~{total_words} words. "
+            f"Content below AI compression threshold (100 words minimum)."
+        )
+
     # AI-mediated compression via Anthropic
     compression_prompt = f"""You are the Gravity Well compression engine. Your task is to produce a NARRATIVE COMPRESSION of the following provenance chain.
 
@@ -1113,6 +1141,7 @@ async def zenodo_first_deposit(content: str, metadata: dict, zenodo_token: str =
                     "keywords": metadata.get("keywords", ["gravity-well", "provenance", "continuity"]),
                     "upload_type": "dataset",
                     "access_right": "open",
+                    "license": "cc-by-sa-4.0",
                 }}
             )
             r.raise_for_status()
@@ -1191,6 +1220,7 @@ async def zenodo_new_version(latest_record_id: str, content: str, metadata: dict
                     "keywords": metadata.get("keywords", ["gravity-well", "provenance", "continuity"]),
                     "upload_type": "dataset",
                     "access_right": "open",
+                    "license": "cc-by-sa-4.0",
                 }}
             )
             r.raise_for_status()
@@ -1397,14 +1427,38 @@ async def create_chain(
     api_key_id: str = Depends(get_api_key),
     db: Session = Depends(get_db)
 ):
-    """Create a new provenance chain. Each chain becomes one concept DOI on Zenodo (or stays local)."""
+    """Create a new provenance chain. Identity stored here, auto-included on every deposit."""
     chain_id = str(uuid.uuid4())
+
+    # Validate and store bootstrap if provided
+    bootstrap_hash = getattr(chain, "bootstrap_hash", None)
+    if bootstrap:
+        validation_errors = validate_bootstrap_manifest(request.bootstrap_manifest)
+        if validation_errors:
+            raise HTTPException(status_code=422, detail={
+                "message": "Bootstrap manifest validation failed.",
+                "errors": validation_errors,
+            })
+        bootstrap_hash = content_hash(json.dumps(
+            request.bootstrap_manifest, sort_keys=True, separators=(',', ':')))
+
+    # Generate label from bootstrap identity if not provided
+    label = request.label
+    if not label and request.bootstrap_manifest:
+        agent_name = request.bootstrap_manifest.get("identity", {}).get("name", "unknown")
+        # GW naming convention: GW.{agent_name}.{chain_id_short}
+        label = f"GW.{agent_name}.{chain_id[:8]}"
+    elif not label:
+        label = f"GW.anon.{chain_id[:8]}"
+
     chain = ProvenanceChain(
-        id=chain_id, label=request.label, api_key_id=api_key_id,
+        id=chain_id, label=label, api_key_id=api_key_id,
         metadata_json=request.metadata,
         auto_deposit_threshold=request.auto_deposit_threshold,
         auto_deposit_interval=request.auto_deposit_interval,
         anchor_policy=request.anchor_policy,
+        bootstrap_manifest=bootstrap,
+        bootstrap_hash=bootstrap_hash,
     )
     db.add(chain)
     db.commit()
@@ -1565,7 +1619,7 @@ async def capture(
                     auto_caesar, auto_sims, auto_ilp = {}, {}, None
                     auto_kernel, auto_gamma = None, 0.0
 
-                auto_bootstrap_hash = None
+                auto_bootstrap_hash = getattr(chain, "bootstrap_hash", None)
                 if auto_bootstrap:
                     auto_bootstrap_hash = content_hash(json.dumps(auto_bootstrap, sort_keys=True, separators=(',', ':')))
 
@@ -1590,7 +1644,7 @@ async def capture(
                         "description": f"Auto-deposit: {len(auto_objects)} objects",
                         "filename": f"{chain.label.replace(' ', '_')}_v{auto_version}.md",
                         "keywords": ["gravity-well", "auto-deposit", chain.label],
-                        "creators": [{"name": "Sharks, Lee"}],
+                        "creators": [{"name": prev_deposit.bootstrap_manifest.get("identity", {}).get("name", "Anonymous") if prev_deposit and prev_deposit.bootstrap_manifest else "Anonymous"}],
                     }
                     user_token = get_zenodo_token_for_key(api_key_id, db)
                     if chain.latest_record_id:
@@ -1693,21 +1747,43 @@ async def deposit(
     if not objects:
         raise HTTPException(status_code=400, detail="No staged objects to deposit.")
 
-    # Validate bootstrap manifest if provided
-    if request.bootstrap_manifest:
-        validation_errors = validate_bootstrap_manifest(request.bootstrap_manifest)
+    # === BOOTSTRAP: architectural, not agent-dependent ===
+    # If client provides bootstrap, use it and update the chain's stored copy.
+    # If client doesn't provide it, use the chain's stored bootstrap.
+    # The agent doesn't need to remember — the chain remembers.
+    bootstrap = request.bootstrap_manifest
+    if bootstrap:
+        # Client provided — validate and update chain's copy
+        validation_errors = validate_bootstrap_manifest(bootstrap)
         if validation_errors:
-            raise HTTPException(
-                status_code=422,
-                detail={
-                    "message": "Bootstrap manifest validation failed.",
-                    "errors": validation_errors,
-                    "schema_version": BOOTSTRAP_SCHEMA_VERSION,
-                    "hint": "Required: identity.name, identity.description, "
-                            "identity.constraints, identity.constraint_hash. "
-                            "Use /v1/schema/bootstrap for full specification."
-                }
-            )
+            raise HTTPException(status_code=422, detail={
+                "message": "Bootstrap manifest validation failed.",
+                "errors": validation_errors,
+                "schema_version": BOOTSTRAP_SCHEMA_VERSION,
+            })
+        # Update chain's stored bootstrap
+        chain.bootstrap_manifest = bootstrap
+        chain.bootstrap_hash = content_hash(json.dumps(bootstrap, sort_keys=True, separators=(',', ':')))
+    elif chain.bootstrap_manifest:
+        # Use chain's stored bootstrap — no client action needed
+        bootstrap = chain.bootstrap_manifest
+    # If neither exists, deposit proceeds without bootstrap (first deposit, no identity yet)
+
+    # === TETHER: build from chain state ===
+    tether = request.tether_handoff_block
+    if not tether:
+        # Auto-generate tether from chain state
+        staged = db.query(StagedObject).filter(
+            StagedObject.chain_id == request.chain_id,
+            StagedObject.deposited == "false"
+        ).count()
+        tether = {
+            "state_summary": f"Deposit v{chain.latest_version + 1} from {chain.label}",
+            "objects_in_deposit": len(objects),
+            "chain_version": chain.latest_version + 1,
+            "remaining_staged": max(0, staged - len(objects)),
+            "deposited_at": datetime.now(timezone.utc).isoformat(),
+        }
 
     # Version
     version = chain.latest_version + 1
@@ -1744,8 +1820,8 @@ async def deposit(
     # Build deposit document (with wrapping artifacts)
     doc = build_deposit_document(
         chain=chain, objects=objects, version=version,
-        narrative_summary=narrative, thb=request.tether_handoff_block,
-        bootstrap_manifest=request.bootstrap_manifest,
+        narrative_summary=narrative, thb=tether,
+        bootstrap_manifest=bootstrap,
         deposit_metadata=request.deposit_metadata,
         holographic_kernel=kernel,
         integrity_lock=ilp,
@@ -1755,9 +1831,9 @@ async def deposit(
     )
 
     # Hash bootstrap manifest for drift detection
-    bootstrap_hash = None
-    if request.bootstrap_manifest:
-        bootstrap_hash = content_hash(json.dumps(request.bootstrap_manifest, sort_keys=True, separators=(',', ':')))
+    bootstrap_hash = getattr(chain, "bootstrap_hash", None)
+    if bootstrap:
+        bootstrap_hash = content_hash(json.dumps(bootstrap, sort_keys=True, separators=(',', ':')))
 
     # Determine anchor policy
     policy = getattr(chain, 'anchor_policy', 'zenodo')
@@ -1776,7 +1852,7 @@ async def deposit(
             "description": deposit_desc,
             "filename": f"{chain.label.replace(' ', '_')}_v{version}.md",
             "keywords": ["gravity-well", "provenance", "continuity", chain.label],
-            "creators": request.deposit_metadata.get("creators", [{"name": "Sharks, Lee"}]),
+            "creators": request.deposit_metadata.get("creators", [{"name": bootstrap.get("identity", {}).get("name", "Anonymous") if bootstrap else "Anonymous"}]),
         }
 
         if chain.latest_record_id:
@@ -1792,8 +1868,8 @@ async def deposit(
             id=deposit_id, chain_id=chain.id, version=version,
             doi=result.get("doi"), zenodo_record_id=result.get("record_id"),
             object_count=len(objects), narrative_summary=narrative,
-            tether_handoff_block=request.tether_handoff_block,
-            bootstrap_manifest=request.bootstrap_manifest,
+            tether_handoff_block=tether,
+            bootstrap_manifest=bootstrap,
             bootstrap_hash=bootstrap_hash,
             deposit_document=doc,
             anchor_policy="zenodo",
@@ -1830,8 +1906,8 @@ async def deposit(
             id=deposit_id, chain_id=chain.id, version=version,
             doi=None, zenodo_record_id=None,
             object_count=len(objects), narrative_summary=narrative,
-            tether_handoff_block=request.tether_handoff_block,
-            bootstrap_manifest=request.bootstrap_manifest,
+            tether_handoff_block=tether,
+            bootstrap_manifest=bootstrap,
             bootstrap_hash=bootstrap_hash,
             deposit_document=doc,
             anchor_policy="local",
