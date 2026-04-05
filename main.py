@@ -17,7 +17,7 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 from typing import Optional, List, Dict, Any, Literal
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 import hashlib
 import uuid
 import os
@@ -167,6 +167,14 @@ try:
         conn.commit()
 except Exception:
     pass  # Column already exists
+
+# Auto-migrate: add created_at to api_keys if missing (added in v0.7.0)
+try:
+    with engine.connect() as conn:
+        conn.execute(text("ALTER TABLE api_keys ADD COLUMN created_at TIMESTAMP"))
+        conn.commit()
+except Exception:
+    pass
 
 # Auto-migrate: add visibility column if missing (added in v0.6.0)
 try:
@@ -1248,13 +1256,18 @@ async def register(
     email = request.get("email")
     zenodo_token = request.get("zenodo_token")
 
-    # Rate limiting: max 5 keys per hour (simple, based on recent key count)
-    one_hour_ago = datetime.now(timezone.utc) - timedelta(hours=1)
-    recent_keys = db.query(ApiKey).filter(
-        ApiKey.created_at > one_hour_ago
-    ).count()
-    if recent_keys > 50:  # server-wide rate limit
-        raise HTTPException(status_code=429, detail="Too many registrations. Try again in an hour.")
+    # Rate limiting: max 50 keys per hour server-wide (defensive — skip if query fails)
+    try:
+        one_hour_ago = datetime.now(timezone.utc) - timedelta(hours=1)
+        recent_keys = db.query(ApiKey).filter(
+            ApiKey.created_at > one_hour_ago
+        ).count()
+        if recent_keys > 50:
+            raise HTTPException(status_code=429, detail="Too many registrations. Try again in an hour.")
+    except HTTPException:
+        raise  # Re-raise the 429
+    except Exception:
+        pass  # Rate limiting failed — allow registration rather than blocking
 
     raw_key = f"gw_{secrets.token_urlsafe(32)}"
     key_id = str(uuid.uuid4())
