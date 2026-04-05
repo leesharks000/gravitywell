@@ -323,7 +323,7 @@ class DriftReport(BaseModel):
     match: bool
     drift_fields: List[str]  # which fields changed
     archived_version: Optional[int]
-    severity: str = "none"  # none | low | medium | high | critical
+    severity: str = "none"  # none | schema | low | medium | high | critical
     narrative: Optional[str] = None  # human-readable drift report
     field_details: Optional[List[Dict[str, Any]]] = None  # per-field change details
 
@@ -1650,48 +1650,98 @@ async def detect_drift(
         json.dumps(latest.bootstrap_manifest, sort_keys=True, separators=(',', ':'))
     )
 
-    # Field-level diff with details
+    # Field-level diff with schema normalization
+    # KimiClaw/SOIL bug report: raw JSON comparison across schema versions
+    # produces false CRITICAL on structural difference, not semantic difference.
+    # Fix: separate SCHEMA_DRIFT (added/removed fields) from CONSTITUTIONAL_DRIFT
+    # (same field, different value). Only constitutional drift triggers CRITICAL.
+
     drift_fields = []
     field_details = []
     archived = latest.bootstrap_manifest
-    all_keys = set(list(request.current_manifest.keys()) + list(archived.keys()))
+
+    current_keys = set(request.current_manifest.keys())
+    archived_keys = set(archived.keys())
+    shared_keys = current_keys & archived_keys
+    added_keys = current_keys - archived_keys
+    removed_keys = archived_keys - current_keys
 
     # Classify fields by criticality
     critical_fields = {"identity", "constraints", "constraint_hash", "name"}
     high_fields = {"description", "psychic_voltage", "shadow_references"}
 
-    for key in sorted(all_keys):
-        current_val = request.current_manifest.get(key)
-        archived_val = archived.get(key)
-        if current_val != archived_val:
+    # Schema drift: fields only in one version (informational, not alarming)
+    for key in sorted(added_keys):
+        drift_fields.append(key)
+        field_details.append({
+            "field": key, "changed": True,
+            "type": "schema_added",
+            "severity": "schema",
+            "description": f"Field '{key}' exists in current but not in archived version (schema evolution, not constitutional drift)",
+        })
+
+    for key in sorted(removed_keys):
+        drift_fields.append(key)
+        sev = "schema"
+        desc = f"Field '{key}' exists in archived but not in current version (schema evolution)"
+        # Removed critical field IS concerning even across schemas
+        if key in critical_fields:
+            sev = "high"
+            desc = f"Field '{key}' was present in archived version but is missing from current manifest — verify intentional"
+        field_details.append({
+            "field": key, "changed": True,
+            "type": "schema_removed",
+            "severity": sev,
+            "description": desc,
+        })
+
+    # Constitutional drift: same field, different value (the real signal)
+    def deep_compare(current_val, archived_val, path=""):
+        """Recursively compare, normalizing nested dicts to shared keys."""
+        if isinstance(current_val, dict) and isinstance(archived_val, dict):
+            c_keys = set(current_val.keys())
+            a_keys = set(archived_val.keys())
+            shared = c_keys & a_keys
+            # Only compare shared keys at nested level
+            for k in sorted(shared):
+                if current_val[k] != archived_val[k]:
+                    return True
+            # Added/removed nested keys are schema drift, not content drift
+            return False
+        return current_val != archived_val
+
+    for key in sorted(shared_keys):
+        current_val = request.current_manifest[key]
+        archived_val = archived[key]
+
+        if deep_compare(current_val, archived_val, key):
             drift_fields.append(key)
-            detail = {"field": key, "changed": True}
             if key in critical_fields:
-                detail["severity"] = "critical"
+                sev = "critical"
             elif key in high_fields:
-                detail["severity"] = "high"
+                sev = "high"
             else:
-                detail["severity"] = "low"
+                sev = "low"
+            field_details.append({
+                "field": key, "changed": True,
+                "type": "modified",
+                "severity": sev,
+                "description": f"Field '{key}' has different values between current and archived version (constitutional drift)",
+            })
 
-            if archived_val is None:
-                detail["type"] = "added"
-                detail["description"] = f"Field '{key}' was added (not in archived version)"
-            elif current_val is None:
-                detail["type"] = "removed"
-                detail["description"] = f"Field '{key}' was removed from current manifest"
-            else:
-                detail["type"] = "modified"
-                detail["description"] = f"Field '{key}' changed from archived version"
-            field_details.append(detail)
+    # Determine overall severity — schema drift alone is never CRITICAL
+    constitutional_details = [d for d in field_details if d["severity"] != "schema"]
+    schema_only_details = [d for d in field_details if d["severity"] == "schema"]
 
-    # Determine overall severity
     if not drift_fields:
         severity = "none"
-    elif any(f in critical_fields for f in drift_fields):
+    elif not constitutional_details:
+        severity = "schema"  # only schema differences, no real drift
+    elif any(d["severity"] == "critical" for d in constitutional_details):
         severity = "critical"
-    elif any(f in high_fields for f in drift_fields):
+    elif any(d["severity"] == "high" for d in constitutional_details):
         severity = "high"
-    elif len(drift_fields) > 3:
+    elif len(constitutional_details) > 3:
         severity = "medium"
     else:
         severity = "low"
@@ -1699,15 +1749,24 @@ async def detect_drift(
     # Generate narrative
     if not drift_fields:
         narrative = f"No drift detected. Chain {chain_id} is structurally identical to archived version {latest.version}. Constitutional integrity confirmed."
+    elif severity == "schema":
+        narrative = (
+            f"Schema evolution detected in chain {chain_id}: "
+            f"{len(schema_only_details)} field(s) added or removed between current manifest and archived version {latest.version}. "
+            f"No constitutional drift — shared fields are identical. "
+            f"Schema changes: {', '.join(d['field'] for d in schema_only_details)}."
+        )
     else:
         critical_drifts = [d for d in field_details if d["severity"] == "critical"]
         narrative_parts = [
-            f"Drift detected in chain {chain_id}: {len(drift_fields)} field(s) changed from archived version {latest.version}.",
+            f"Drift detected in chain {chain_id}: {len(constitutional_details)} constitutional change(s) from archived version {latest.version}.",
             f"Severity: {severity.upper()}.",
         ]
         if critical_drifts:
             narrative_parts.append(f"CRITICAL: {', '.join(d['field'] for d in critical_drifts)} — constitutional constraint fields have been modified.")
-        narrative_parts.append(f"Changed fields: {', '.join(drift_fields)}.")
+        if schema_only_details:
+            narrative_parts.append(f"Additionally, {len(schema_only_details)} schema-level change(s) detected (informational).")
+        narrative_parts.append(f"Changed fields: {', '.join(d['field'] for d in constitutional_details)}.")
         narrative = " ".join(narrative_parts)
 
     return DriftReport(
