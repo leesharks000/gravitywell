@@ -1431,8 +1431,8 @@ async def create_chain(
     chain_id = str(uuid.uuid4())
 
     # Validate and store bootstrap if provided
-    bootstrap_hash = getattr(chain, "bootstrap_hash", None)
-    if bootstrap:
+    bootstrap_hash = None
+    if request.bootstrap_manifest:
         validation_errors = validate_bootstrap_manifest(request.bootstrap_manifest)
         if validation_errors:
             raise HTTPException(status_code=422, detail={
@@ -1457,13 +1457,13 @@ async def create_chain(
         auto_deposit_threshold=request.auto_deposit_threshold,
         auto_deposit_interval=request.auto_deposit_interval,
         anchor_policy=request.anchor_policy,
-        bootstrap_manifest=bootstrap,
+        bootstrap_manifest=request.bootstrap_manifest,
         bootstrap_hash=bootstrap_hash,
     )
     db.add(chain)
     db.commit()
     return ChainResponse(
-        chain_id=chain_id, label=request.label,
+        chain_id=chain_id, label=label,
         concept_doi=None, latest_version=0, staged_count=0,
         anchor_policy=request.anchor_policy
     )

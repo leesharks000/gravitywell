@@ -231,7 +231,7 @@ def test_round_trip(api_key):
     if r.status_code != 200:
         report("Create chain", False, f"Status {r.status_code}: {r.text[:200]}")
         return
-    chain_id = r.json()["id"]
+    chain_id = r.json()["chain_id"]
     report("Create chain", True, f"chain_id={chain_id[:12]}...")
 
     # 2. Build bootstrap manifest
@@ -263,7 +263,7 @@ def test_round_trip(api_key):
         payload = {
             "chain_id": chain_id,
             "content": cap["content"],
-            "content_type": "test-utterance",
+            "content_type": "text",
             "visibility": cap["visibility"],
             "parent_object_id": parent,
         }
@@ -418,7 +418,7 @@ if __name__ == "__main__":
     if admin_key and not api_key:
         print("\n--- Creating test API key ---")
         r = requests.post(f"{GW}/v1/admin/keys/create",
-                          headers={"X-Admin-Key": admin_key},
+                          headers={"X-Admin-Token": admin_key},
                           json={"label": "merkaba-test-key"})
         if r.status_code == 200:
             api_key = r.json().get("api_key")
