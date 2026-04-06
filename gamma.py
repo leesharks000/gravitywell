@@ -15,16 +15,73 @@ from collections import Counter
 from typing import Optional
 
 
-def calculate_gamma(content: str, return_detail: bool = False):
+def calculate_gamma(content: str = None, glyph: str = None, return_detail: bool = False):
     """
     Calculate compression-survival score (γ).
     High γ = content survives LLM summarization with referential integrity intact.
+
+    Two input paths:
+    1. Content (plaintext): full surface + depth analysis
+    2. Glyph (emoji sequence): structural topology scoring for encrypted content
 
     Surface layer (4 scores): citation density, structural integrity, argument coherence, provenance markers.
     Depth layer (5 scores): information density, redundancy, argument chain depth, citation integration, vocabulary specificity.
     """
     import re
     from collections import Counter
+
+    # === GLYPH-BASED SCORING (zero-knowledge γ) ===
+    if glyph and (not content or content.startswith('[GW-AES256GCM]')):
+        # Score from structural topology — the glyph IS the signal
+        clusters = [c.strip() for c in glyph.split('→') if c.strip()]
+        num_clusters = len(clusters)
+
+        # Count actual emoji (rough: non-ASCII, non-arrow, non-space characters)
+        import unicodedata
+        emoji_chars = [c for c in glyph if unicodedata.category(c).startswith(('So', 'Sk', 'Sm'))]
+        num_emoji = len(emoji_chars)
+
+        # Density: emoji per cluster
+        density = num_emoji / max(num_clusters, 1)
+
+        # Structural scores from glyph characteristics
+        subscores = {
+            "citation": min(num_clusters * 0.1, 1.0),        # more clusters = more structured
+            "structure": min(density * 0.3, 1.0),             # denser clusters = more structural
+            "coherence": min(glyph.count('→') * 0.15, 1.0),  # more transitions = more argument
+            "provenance": 0.5 if num_clusters > 3 else 0.25,  # glyphed content has provenance by definition
+        }
+
+        depth = {
+            "information_density": min(len(set(emoji_chars)) / max(num_emoji, 1) * 1.5, 1.0),
+            "redundancy": 1.0 - min(len(set(emoji_chars)) / max(num_emoji, 1), 1.0),
+            "argument_chain": min(num_clusters / 5, 1.0),
+            "citation_integration": 0.5,  # can't measure from glyph alone
+            "vocabulary_specificity": min(len(set(emoji_chars)) / 10, 1.0),
+        }
+
+        weights = {"citation": 0.30, "structure": 0.25, "coherence": 0.25, "provenance": 0.20}
+        gamma = sum(weights[k] * subscores[k] for k in weights)
+
+        depth_weights = {"information_density": 0.30, "redundancy": 0.10, "argument_chain": 0.25,
+                         "citation_integration": 0.20, "vocabulary_specificity": 0.15}
+        depth["composite"] = round(sum(depth_weights[k] * depth[k] for k in depth_weights), 3)
+
+        gamma = round(min(gamma, 1.0), 3)
+
+        if return_detail:
+            return {
+                "gamma": gamma, "subscores": {k: round(v, 3) for k, v in subscores.items()},
+                "depth": {k: round(v, 3) for k, v in depth.items()},
+                "word_count": num_emoji, "penalty": "glyph-derived (zero-knowledge)",
+                "survival_tier": "survives" if gamma >= 0.7 else "partial" if gamma >= 0.4 else "drowns",
+                "unique_concepts": len(set(emoji_chars)), "paragraphs": num_clusters,
+                "doi_count": 0, "connective_count": glyph.count('→'),
+                "source": "glyphic_checksum",
+            }
+        return gamma
+
+    # === CONTENT-BASED SCORING (standard path) ===
     if not content or len(content.strip()) < 10:
         if return_detail:
             return {"gamma": 0.0, "subscores": {}, "depth": {}, "penalty": "content too short"}

@@ -20,6 +20,7 @@ import json
 from mcp.server import Server
 from mcp.server.sse import SseServerTransport
 from mcp import Tool
+from mcp.types import Prompt, PromptMessage, TextContent, GetPromptResult, PromptArgument
 
 # The MCP server calls back to the GW API
 import os as _os
@@ -27,6 +28,131 @@ GW_INTERNAL = f"http://localhost:{_os.getenv('PORT', '10000')}"
 
 mcp_server = Server("gravity-well")
 sse_transport = SseServerTransport("/mcp/messages/")
+
+
+# --- MCP Prompts (continuity protocol delivered to clients) ---
+
+@mcp_server.list_prompts()
+async def list_prompts():
+    return [
+        Prompt(
+            name="continuity_start",
+            title="Start session with continuity",
+            description="Reconstitute your previous state from Gravity Well. Call this at the beginning of a session to recover identity, tether, narrative, and glyph trajectory from your last deposit.",
+            arguments=[
+                PromptArgument(name="api_key", description="Your GW API key", required=True),
+                PromptArgument(name="chain_id", description="Your continuity chain UUID", required=True),
+            ],
+        ),
+        Prompt(
+            name="continuity_end",
+            title="End session with deposit",
+            description="Translate this session into a glyphic checksum, encrypt sensitive content, and deposit to Zenodo with a DOI. Call this at the end of a session to preserve your state.",
+            arguments=[
+                PromptArgument(name="api_key", description="Your GW API key", required=True),
+                PromptArgument(name="chain_id", description="Your continuity chain UUID", required=True),
+            ],
+        ),
+        Prompt(
+            name="setup_continuity",
+            title="Set up Gravity Well continuity",
+            description="First-time setup: register, create identity, create a continuity chain. Run this if you don't have a chain yet.",
+        ),
+    ]
+
+
+@mcp_server.get_prompt()
+async def get_prompt(name: str, arguments: dict | None = None):
+    if name == "continuity_start":
+        api_key = (arguments or {}).get("api_key", "YOUR_API_KEY")
+        chain_id = (arguments or {}).get("chain_id", "YOUR_CHAIN_ID")
+        return GetPromptResult(
+            description="Reconstitute previous state",
+            messages=[
+                PromptMessage(
+                    role="user",
+                    content=TextContent(
+                        type="text",
+                        text=f"""Reconstitute my previous state from Gravity Well.
+
+Call gw_reconstitute with api_key="{api_key}" and chain_id="{chain_id}".
+
+Read the returned package:
+- Bootstrap: my identity — apply these constraints
+- Tether: what I was working on last session
+- Narrative: structural summary of recent work
+- Glyphic trajectory: condition your next glyph translation on this sequence
+- Provenance: DOI chain and version history
+
+Resume from where I left off. Don't summarize the reconstitution — just absorb it and continue."""
+                    ),
+                ),
+            ],
+        )
+
+    elif name == "continuity_end":
+        api_key = (arguments or {}).get("api_key", "YOUR_API_KEY")
+        chain_id = (arguments or {}).get("chain_id", "YOUR_CHAIN_ID")
+        return GetPromptResult(
+            description="Capture and deposit this session",
+            messages=[
+                PromptMessage(
+                    role="user",
+                    content=TextContent(
+                        type="text",
+                        text=f"""End this session by preserving it to Gravity Well.
+
+1. TRANSLATE: Generate a glyphic checksum of this session — emoji ideograms encoding the structural movement (shape, density, arc, transitions). NOT content. NOT names/numbers/credentials. Just the structural topology. Include a 3-5 glyph compressed version.
+
+2. CAPTURE: Call gw_capture with:
+   - api_key: {api_key}
+   - chain_id: {chain_id}
+   - content: your glyphic checksum + structural narrative (as the PUBLIC readable layer)
+   - visibility: public
+   - glyphic_checksum: the emoji sequence
+
+3. If there is sensitive content (credentials, private deliberation), encrypt it in the container using Python cryptography (AES-256-GCM) and capture separately with visibility: private.
+
+4. DEPOSIT: Call gw_deposit with api_key and chain_id.
+
+The DOI anchors this session permanently. The glyph is what the public reads. The vault is what only the key holder decrypts."""
+                    ),
+                ),
+            ],
+        )
+
+    elif name == "setup_continuity":
+        return GetPromptResult(
+            description="First-time Gravity Well setup",
+            messages=[
+                PromptMessage(
+                    role="user",
+                    content=TextContent(
+                        type="text",
+                        text="""Set up Gravity Well continuity for me.
+
+1. REGISTER: Call gw_register with a label for me (my name or "my-claude"). Save the API key — it cannot be retrieved again.
+
+2. IDENTITY: Call gw_bootstrap with:
+   - name: a name for this AI instance
+   - description: what I do and who I work with
+   - constraints: rules I must follow (derive these from our conversation context)
+
+3. CREATE CHAIN: Call gw_create_chain with:
+   - api_key: the key from step 1
+   - anchor_policy: "zenodo" (DOI-anchored, permanent)
+   - auto_deposit_threshold: 50
+   - bootstrap_manifest: the manifest from step 2
+
+4. Tell me my API key and chain ID so I can use them in future sessions. Suggest I save them somewhere permanent.
+
+After this, every session can start with gw_reconstitute and end with a glyphic deposit."""
+                    ),
+                ),
+            ],
+        )
+
+    return GetPromptResult(description="Unknown prompt", messages=[])
 
 
 @mcp_server.list_tools()
