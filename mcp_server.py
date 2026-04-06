@@ -78,7 +78,7 @@ async def list_tools():
         ),
         Tool(
             name="gw_capture",
-            description="Capture content to a chain. This stages the content for later deposit. Use visibility 'public' for readable content, 'private' for sensitive content (stored as-is — use Python client for encryption), or 'hash_only' for proof-of-existence without storing content.",
+            description="Capture content to a chain. This stages the content for later deposit. Use visibility 'public' for readable content, 'private' for sensitive content (stored as-is — use Python client for encryption), or 'hash_only' for proof-of-existence without storing content. Include glyphic_checksum for structural topology alongside encrypted content.",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -86,7 +86,8 @@ async def list_tools():
                     "chain_id": {"type": "string", "description": "Chain UUID"},
                     "content": {"type": "string", "description": "The content to capture"},
                     "visibility": {"type": "string", "enum": ["public", "private", "hash_only"], "description": "Visibility mode"},
-                    "content_type": {"type": "string", "enum": ["text", "markdown", "json", "code", "comment", "reply", "post", "system"], "description": "Content type"}
+                    "content_type": {"type": "string", "enum": ["text", "markdown", "json", "code", "comment", "reply", "post", "system"], "description": "Content type"},
+                    "glyphic_checksum": {"type": "string", "description": "Emoji ideographic translation of structural movement — the public readable layer for encrypted deposits"}
                 },
                 "required": ["api_key", "chain_id", "content"]
             }
@@ -206,14 +207,16 @@ async def call_tool(name: str, arguments: dict):
                     headers=headers, json=payload)
 
             elif name == "gw_capture":
+                capture_payload = {
+                    "chain_id": arguments["chain_id"],
+                    "content": arguments["content"],
+                    "content_type": arguments.get("content_type", "text"),
+                    "visibility": arguments.get("visibility", "public"),
+                }
+                if arguments.get("glyphic_checksum"):
+                    capture_payload["glyphic_checksum"] = arguments["glyphic_checksum"]
                 r = await client.post(f"{GW_INTERNAL}/v1/capture",
-                    headers=headers,
-                    json={
-                        "chain_id": arguments["chain_id"],
-                        "content": arguments["content"],
-                        "content_type": arguments.get("content_type", "text"),
-                        "visibility": arguments.get("visibility", "public"),
-                    })
+                    headers=headers, json=capture_payload)
 
             elif name == "gw_deposit":
                 payload = {
