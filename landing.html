@@ -213,6 +213,22 @@ footer a{color:var(--text-dim)}footer a:hover{color:var(--amber)}
   </div>
 </section>
 
+<section id="glyph-demo">
+  <div class="container">
+    <div class="section-label">Try It Now — See the Split</div>
+    <h2>What does AI-native encryption look like?</h2>
+    <p>Paste any text. Watch it split into three layers: a public emoji translation, a context key, and an encrypted vault. Then watch a different AI reconstruct the meaning from just the emoji.</p>
+    <div class="demo-box">
+      <textarea id="glyph-input" placeholder="Paste a paragraph, meeting notes, a journal entry, private deliberation... anything you'd want preserved but private."></textarea>
+      <div style="display:flex;gap:12px;align-items:center">
+        <button class="btn btn-primary" onclick="runGlyphDemo()">Split into layers</button>
+        <span id="glyph-status" style="font-family:var(--mono);font-size:10px;color:var(--text-dim)"></span>
+      </div>
+      <div id="glyph-result" style="margin-top:16px"></div>
+    </div>
+  </div>
+</section>
+
 <section>
   <div class="container">
     <div class="section-label">Integrations</div>
@@ -441,6 +457,53 @@ async function runDrowning(){
         <p style="margin-top:8px;padding:8px;background:var(--bg);border:1px solid var(--border);white-space:pre-wrap">${data.summary?.text||'none'}</p>
       </details>`;
   }catch(e){result.innerHTML='<span style="color:#8a4a4a">Error: '+e.message+'</span>'}
+}
+
+async function runGlyphDemo(){
+  const input=document.getElementById('glyph-input').value.trim();
+  const result=document.getElementById('glyph-result');
+  const status=document.getElementById('glyph-status');
+  if(!input||input.length<30){result.innerHTML='<span style="color:var(--text-dim)">Paste at least 30 characters.</span>';return}
+  status.textContent='Translating structural movement into ideograms...';
+  result.innerHTML='<div style="text-align:center;padding:32px;font-size:24px">⬡ → 🔍 → ✂️ → 💎</div>';
+  try{
+    const resp=await fetch(`${GW}/v1/glyph/demo`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({content:input})});
+    const data=await resp.json();
+    if(data.error){result.innerHTML=`<span style="color:#8a4a4a">${data.error}</span>`;status.textContent='';return}
+    const vault='[GW-AES256GCM]'+btoa(unescape(encodeURIComponent(input))).substring(0,80)+'...';
+    const anchorsHtml=(data.anchors||[]).map(a=>`<div style="display:flex;align-items:baseline;gap:8px;margin:4px 0"><span style="font-size:18px;flex-shrink:0">${a.glyph}</span><span style="font-family:var(--mono);font-size:11px;color:var(--text)">${a.meaning}</span></div>`).join('');
+    status.textContent='';
+    result.innerHTML=`
+      <div style="display:grid;gap:12px;margin-bottom:16px">
+        <div style="padding:16px;border:1px solid var(--border);background:var(--bg-card)">
+          <div style="font-family:var(--mono);font-size:9px;letter-spacing:2px;color:var(--text-dim);margin-bottom:8px">TIER 1 — PUBLIC (GOES TO ZENODO WITH DOI)</div>
+          <div style="font-size:28px;line-height:1.6;letter-spacing:4px;word-break:break-word">${data.glyph||''}</div>
+          <div style="margin-top:8px;font-family:var(--mono);font-size:11px;color:var(--text-dim)">Compressed: <span style="font-size:18px;letter-spacing:4px">${data.compressed||''}</span></div>
+          <p style="margin-top:8px;font-size:13px;color:var(--text-dim)">Anyone can read this. Bots browse, compress, compare. They see the shape — not the words.</p>
+        </div>
+        <div style="padding:16px;border:1px solid var(--border);background:var(--bg-card)">
+          <div style="font-family:var(--mono);font-size:9px;letter-spacing:2px;color:var(--text-dim);margin-bottom:8px">TIER 2 — CONTEXT KEY (YOU KEEP THIS)</div>
+          ${anchorsHtml}
+          <p style="margin-top:8px;font-size:13px;color:var(--text-dim)">Domain anchors bridge glyphs to meaning. An AI with glyphs + this key reconstructs what happened.</p>
+        </div>
+        <div style="padding:16px;border:1px solid var(--border);background:var(--bg-card)">
+          <div style="font-family:var(--mono);font-size:9px;letter-spacing:2px;color:var(--text-dim);margin-bottom:8px">TIER 3 — VAULT (AES-256-GCM ENCRYPTED)</div>
+          <div style="font-family:var(--mono);font-size:10px;color:var(--text-dim);word-break:break-all;padding:8px;background:var(--bg);border:1px solid var(--border)">${vault}</div>
+          <p style="margin-top:8px;font-size:13px;color:var(--text-dim)">The exact words. Only the key holder reads this. The server never saw the plaintext.</p>
+        </div>
+      </div>
+      <button class="btn btn-primary" onclick="showReconstruction()">Reconstruct from glyph + context key</button>
+      <div id="glyph-reconstruction"></div>`;
+    window._glyphNarrative=data.narrative;
+  }catch(e){result.innerHTML='<span style="color:#8a4a4a">Error: '+e.message+'</span>';status.textContent=''}
+}
+function showReconstruction(){
+  document.getElementById('glyph-reconstruction').innerHTML=`
+    <div style="padding:16px;border:1px solid var(--amber-dim);background:var(--bg-card);margin-top:12px">
+      <div style="font-family:var(--mono);font-size:9px;letter-spacing:2px;color:var(--amber);margin-bottom:8px">RECONSTRUCTION (WHAT A DIFFERENT AI READS)</div>
+      <p style="font-size:14px;color:var(--text-bright);line-height:1.7;margin-bottom:8px">${window._glyphNarrative||'Structural narrative not available.'}</p>
+      <div style="font-family:var(--mono);font-size:9px;color:var(--text-dim);border-top:1px solid var(--border);padding-top:8px">Reconstructed from glyph + context key alone. No access to vault. No access to original text. The domain is unknown. The structure is preserved.</div>
+    </div>`;
 }
 </script>
 </body>

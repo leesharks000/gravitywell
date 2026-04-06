@@ -2524,6 +2524,78 @@ async def drowning_test(content: str = Body(..., embed=True)):
     }
 
 
+@app.post("/v1/glyph/demo")
+async def glyph_demo(content: str = Body(..., embed=True)):
+    """
+    Glyphic Checksum demo — no API key required.
+    Translates text into an ideographic glyph sequence, generates
+    context anchors, and produces a structural narrative.
+    This is the product demo for AI-native encryption.
+
+    NOTE: This is a demo endpoint. In production, the conversing LLM
+    generates the glyph (no new trust boundary). Here, the user knowingly
+    submits text for demonstration purposes.
+    """
+    if not content or len(content.strip()) < 30:
+        return {"error": "Content too short (minimum 30 characters)"}
+
+    if not ANTHROPIC_API_KEY:
+        return {"error": "ANTHROPIC_API_KEY not configured"}
+
+    prompt = """GLYPH TRANSLATION PROTOCOL v0.1
+
+Translate the structural movement of the following content into an ideographic glyph sequence using emoji.
+
+RULES:
+1. Encode SHAPE, not content. Represent the arc of reasoning — problems, solutions, transitions, density shifts — not specific topics, names, numbers, or tokens.
+2. Someone reading the glyphs should understand structural movement but NOT identify specific content.
+3. Use emoji as ideograms. Each cluster = a structural moment. Use the arrow character for transitions.
+4. FORBIDDEN: Never encode specific names, numbers, credentials, URLs, or identifiable tokens.
+5. After the full glyph, provide a compressed 3-5 glyph version.
+6. Provide 3-5 domain-neutral structural anchors — short phrases describing what each glyph cluster represents structurally.
+
+Respond ONLY in this exact JSON format, no markdown, no backticks:
+{"glyph":"your full glyph sequence","compressed":"3-5 glyph essence","anchors":[{"glyph":"cluster","meaning":"structural description"}],"narrative":"2-3 sentence structural narrative from the glyph only, not the content. Describe the arc without revealing the domain."}
+
+CONTENT TO TRANSLATE:
+""" + content[:4000]
+
+    try:
+        async with httpx.AsyncClient(timeout=60) as client:
+            resp = await client.post(
+                "https://api.anthropic.com/v1/messages",
+                headers={
+                    "x-api-key": ANTHROPIC_API_KEY,
+                    "anthropic-version": "2023-06-01",
+                    "content-type": "application/json",
+                },
+                json={
+                    "model": "claude-sonnet-4-20250514",
+                    "max_tokens": 1000,
+                    "messages": [{"role": "user", "content": prompt}],
+                },
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            text = "\n".join(c.get("text", "") for c in data.get("content", []))
+
+            try:
+                clean = text.replace("```json", "").replace("```", "").strip()
+                parsed = json.loads(clean)
+            except Exception:
+                parsed = {
+                    "glyph": text[:200],
+                    "compressed": "⚙️🔧💎",
+                    "anchors": [{"glyph": "⚙️", "meaning": "processing"}],
+                    "narrative": "Translation completed but structured parsing failed.",
+                }
+
+            return parsed
+
+    except Exception as e:
+        return {"error": f"Glyph translation failed: {str(e)[:100]}"}
+
+
 # --- Background Auto-Deposit Worker ---
 
 import asyncio
