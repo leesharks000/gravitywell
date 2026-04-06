@@ -3168,18 +3168,22 @@ async def favicon():
 
 @app.get("/v1/health")
 async def health():
-    return {
-        "status": "healthy",
-        "version": "0.7.0",
-        "protocol": "gravity-well",
-        "phase": 2,
-        "capabilities": {
-            "invoke": bool(ANTHROPIC_API_KEY),
-            "governance": bool(SUPABASE_URL and SUPABASE_SERVICE_KEY),
-            "deposit": bool(os.getenv("ZENODO_TOKEN")),
-            "compression": bool(ANTHROPIC_API_KEY),
-        },
-    }
+    try:
+        return {
+            "status": "healthy",
+            "version": "0.8.0",
+            "protocol": "gravity-well",
+            "mcp_tools": 15,
+            "mcp_prompts": 3,
+            "capabilities": {
+                "invoke": bool(ANTHROPIC_API_KEY),
+                "governance": bool(os.getenv("SUPABASE_URL")),
+                "deposit": bool(os.getenv("ZENODO_TOKEN")),
+                "encryption": bool(os.getenv("SUPABASE_URL")),
+            },
+        }
+    except Exception as e:
+        return {"status": "degraded", "error": str(e)[:100]}
 
 
 @app.get("/v1/schema/bootstrap")
