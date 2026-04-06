@@ -1,4 +1,4 @@
-# GRAVITY WELL — Systems Workplan v3.0
+# GRAVITY WELL — Systems Workplan v3.2
 ## Compression, Wrapping, Anchoring, and Zero-Knowledge Continuity
 
 **Last updated:** 2026-04-06
@@ -293,6 +293,60 @@ rotated_at      TIMESTAMP
 
 **7.5** MODEL_INTEGRATION_GUIDE.md update — each model generates its own glyphs from its own conversation
 
+### Phase 8: External User Onboarding (OAuth + Auto-Continuity)
+**Effort:** 6 hours
+**Depends on:** Phases 2, 4
+**This is the difference between "Lee's custom setup" and "a product anyone can use."**
+
+**8.1** User accounts table + migration:
+```sql
+users:
+  id           TEXT PRIMARY KEY
+  email        TEXT UNIQUE
+  api_key_id   TEXT (links to existing api_keys table)
+  created_at   TIMESTAMP
+  default_chain_id TEXT (auto-created on first use)
+```
+
+**8.2** OAuth provider endpoints:
+- `GET /oauth/authorize` — authorization page (simple account creation or login)
+- `POST /oauth/token` — token exchange endpoint
+- Claude's callback URL: `https://claude.ai/api/mcp/auth_callback`
+- OAuth token maps to existing API key system — no new auth architecture
+
+**8.3** MCP server-provided prompts — the continuity protocol lives on the server, not in user memory:
+```json
+{
+  "name": "continuity_protocol",
+  "description": "Gravity Well — auto-preserve sessions",
+  "content": "At session start: call gw_reconstitute on user's default chain.
+    If no chain exists, offer to set up continuity.
+    At session end: translate session arc into glyphic checksum,
+    encrypt sensitive content, capture glyph (public) + vault (private),
+    deposit to Zenodo with DOI."
+}
+```
+
+**8.4** Auto-chain creation flow:
+- First session: Claude detects GW connector, calls `gw_chains`, gets empty list
+- Claude offers: "I can set up session continuity. Your conversations will be preserved with DOI-anchored deposits."
+- User says yes → Claude creates bootstrap (from conversation context), creates chain, captures first session
+- Subsequent sessions: chain exists, Claude reconstitutes and continues
+
+**8.5** Default chain per user — every user account gets one chain created automatically on first connection. Label auto-generated from account name.
+
+**8.6** ChatGPT OAuth — same flow for Custom GPT actions. User authenticates once, GPT has permanent access.
+
+**The user experience after Phase 8:**
+```
+Claude.ai → Settings → Connectors → "Add Gravity Well"
+  → Redirects to GW: "Create your account" (email, one click)
+  → OAuth token stored in Claude's connector config
+  → Every new session: Claude automatically reconstitutes
+  → Session end: Claude automatically captures + deposits
+  → User does nothing. Continuity is architectural.
+```
+
 ---
 
 ## Implementation Order (Session Plan)
@@ -305,25 +359,30 @@ rotated_at      TIMESTAMP
 - MCP: Claude generates glyphs + encrypts + captures
 
 ### Session B: Structured Deposits + Key Management (Phases 3 + 4)
-- Encrypted deposit document format
-- Supabase key storage
-- KEK/CEK architecture
+- Encrypted deposit document format with glyph as public layer
+- Supabase key storage (KEK/CEK architecture)
 - GW-independent recovery path
 - Test: deposit to Zenodo → download from DOI → recover without GW
 
 ### Session C: Lexicon Ratchet + Hardening (Phases 5 + 6)
-- Lexicon state model
-- Ratchet computation
+- Lexicon state model and ratchet computation
 - Checkpoint system
 - Modularize main.py
 - Render paid tier
 - SECURITY.md
 
-### Session D: Integration + Launch Prep (Phase 7)
+### Session D: OAuth + External Onboarding (Phase 8)
+- User accounts + OAuth provider
+- MCP server-provided prompts (continuity protocol on server)
+- Auto-chain creation flow
+- Zero-config experience: add connector → authenticate → done
+
+### Session E: Integration + Launch (Phase 7 + launch)
 - MCP/dashboard/GPT updates with glyph generation
 - Assembly re-test with full glyphic architecture
 - Stripe live
 - TANG cold emails
+- Show HN
 
 ---
 
@@ -338,7 +397,8 @@ rotated_at      TIMESTAMP
 | 5. Lexicon ratchet | 4 |
 | 6. Infrastructure | 3 |
 | 7. Integration updates | 2 |
-| **Total** | **~24 hours across 4 sessions** |
+| 8. OAuth + external onboarding | 6 |
+| **Total** | **~30 hours across 5 sessions** |
 
 ---
 
@@ -355,3 +415,5 @@ rotated_at      TIMESTAMP
 - **The pricing model is justified** — structural telemetry over time, not ciphertext storage
 - **The Caesura is complete** — structural claim separated from private substrate at every layer
 - **GW-independent recovery** — API key + Zenodo DOI + documented algorithm = full recovery without GW infrastructure
+- **Zero-config for external users** — add connector, authenticate, continuity is automatic
+- **Every Claude session preserved** — no memory edits, no API keys to manage, no protocol to learn
