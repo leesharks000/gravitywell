@@ -905,7 +905,7 @@ async def zenodo_first_deposit(content: str, metadata: dict, zenodo_token: str =
             r.raise_for_status()
 
             # Set metadata
-            creators = metadata.get("creators", [{"name": "Sharks, Lee"}])
+            creators = metadata.get("creators", [{"name": "Anonymous"}])
             r = await client.put(
                 f"https://zenodo.org/api/deposit/depositions/{dep_id}",
                 headers=headers,
@@ -985,7 +985,7 @@ async def zenodo_new_version(latest_record_id: str, content: str, metadata: dict
             r.raise_for_status()
 
             # Update metadata
-            creators = metadata.get("creators", [{"name": "Sharks, Lee"}])
+            creators = metadata.get("creators", [{"name": "Anonymous"}])
             r = await client.put(
                 f"https://zenodo.org/api/deposit/depositions/{draft_id}",
                 headers=headers,
