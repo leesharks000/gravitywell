@@ -2,7 +2,7 @@
 Gravity Well MCP Server — Model Context Protocol integration.
 Gives Claude (and any MCP-capable model) native access to continuity infrastructure.
 
-Tools (14):
+Tools (15):
   gw_register — Create an API key
   gw_bootstrap — Generate identity manifest
   gw_create_chain — Create a continuity chain
@@ -17,6 +17,7 @@ Tools (14):
   gw_retrieve_key — Retrieve and decrypt encryption key
   gw_store_context — Store glyphic context anchors (Tier 2)
   gw_retrieve_context — Retrieve context anchors
+  gw_ledger — Generate Ledger deposit (stratified continuity compression)
 
 Prompts (3):
   continuity_start — Reconstitute and resume from last deposit
@@ -350,6 +351,18 @@ async def list_tools():
                 "required": ["api_key", "chain_id"]
             }
         ),
+        Tool(
+            name="gw_ledger",
+            description="Generate a Ledger deposit — stratified continuity compression. Compresses the entire Archive chain into Foundation (crystallized, never re-compressed), Canonical Events (high-γ moments), Epoch Summaries (10:1 compressed middle), and Present Horizon (last 50, uncompressed). Creates a linked Ledger chain if none exists. Deposits to Zenodo with its own DOI.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "api_key": {"type": "string", "description": "Your GW API key"},
+                    "chain_id": {"type": "string", "description": "Archive chain UUID to compress"}
+                },
+                "required": ["api_key", "chain_id"]
+            }
+        ),
     ]
 
 
@@ -469,6 +482,11 @@ async def call_tool(name: str, arguments: dict):
                 r = await client.get(
                     f"{GW_INTERNAL}/v1/context/{arguments['chain_id']}",
                     headers=headers)
+
+            elif name == "gw_ledger":
+                r = await client.post(
+                    f"{GW_INTERNAL}/v1/chain/{arguments['chain_id']}/ledger",
+                    headers=headers, json={})
 
             else:
                 return [{"type": "text", "text": f"Unknown tool: {name}"}]

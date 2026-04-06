@@ -108,6 +108,11 @@ class ProvenanceChain(Base):
     anchor_policy = Column(String, default="zenodo")          # zenodo | local (no DOI, stays in GW)
     staged_count = Column(Integer, default=0)
 
+    # Stratified continuity — Archive ↔ Ledger linking
+    ledger_chain_id = Column(String, nullable=True)    # If this is an Archive, points to its Ledger
+    archive_chain_id = Column(String, nullable=True)   # If this is a Ledger, points to its Archive
+    chain_type = Column(String, default="archive")     # "archive" | "ledger"
+
 
 class StagedObject(Base):
     """
@@ -231,6 +236,15 @@ for col in ["deposit_document TEXT", "anchor_policy TEXT DEFAULT 'zenodo'"]:
     try:
         with engine.connect() as conn:
             conn.execute(text(f"ALTER TABLE deposit_records ADD COLUMN {col}"))
+            conn.commit()
+    except Exception:
+        pass
+
+# Auto-migrate: add stratified continuity fields to chains (added in v0.8.0)
+for col in ["ledger_chain_id TEXT", "archive_chain_id TEXT", "chain_type TEXT DEFAULT 'archive'"]:
+    try:
+        with engine.connect() as conn:
+            conn.execute(text(f"ALTER TABLE provenance_chains ADD COLUMN {col}"))
             conn.commit()
     except Exception:
         pass
@@ -443,6 +457,7 @@ def content_hash(content: str) -> str:
 from gamma import calculate_gamma
 from wrapping import tag_evidence_membrane, apply_caesura, inject_sims, apply_integrity_lock
 from supabase_keys import store_encryption_key, retrieve_encryption_key, store_context_key, retrieve_context_key, encrypt_cek, decrypt_cek
+from ledger import extract_foundation, extract_canonical_events, compress_epochs, extract_present_horizon, build_ledger_document
 
 
 # --- Bootstrap Manifest Schema ---
@@ -1997,6 +2012,170 @@ async def get_context(
         return {"found": False, "chain_id": chain_id}
 
     return {"found": True, "chain_id": chain_id, "context_data": context}
+
+
+# --- Stratified Continuity (Ledger Chain) ---
+
+@app.post("/v1/chain/{chain_id}/ledger")
+async def generate_ledger(
+    chain_id: str,
+    api_key_id: str = Depends(get_api_key),
+    db: Session = Depends(get_db)
+):
+    """
+    Generate a Ledger deposit for an Archive chain.
+
+    The Ledger is a weighted compression of the entire Archive:
+    - Foundation (crystallized): first N objects + constitutional amendments
+    - Canonical Events: high-γ moments from the middle
+    - Epoch Summaries: compressed middle (10:1)
+    - Present Horizon: last 50 objects, uncompressed
+
+    If no Ledger chain exists, one is created and linked to the Archive.
+    The Ledger deposit is anchored to Zenodo with its own DOI.
+    """
+    # Get the archive chain
+    archive = db.query(ProvenanceChain).filter(
+        ProvenanceChain.id == chain_id, ProvenanceChain.api_key_id == api_key_id
+    ).first()
+    if not archive:
+        raise HTTPException(status_code=404, detail="Chain not found")
+
+    # Get all deposited objects from the archive
+    all_objects = db.query(StagedObject).filter(
+        StagedObject.chain_id == chain_id,
+        StagedObject.deposited == "true"
+    ).order_by(StagedObject.captured_at).all()
+
+    if not all_objects:
+        raise HTTPException(status_code=400, detail="No deposited objects — nothing to compress")
+
+    # Create or find the Ledger chain
+    ledger_chain_id = archive.ledger_chain_id
+    if not ledger_chain_id:
+        # Create the Ledger chain
+        ledger_chain_id = str(uuid.uuid4())
+        ledger_label = archive.label.replace(".continuity", ".ledger").replace(".zenodo", ".ledger")
+        if ".ledger" not in ledger_label:
+            ledger_label += ".ledger"
+
+        ledger_chain = ProvenanceChain(
+            id=ledger_chain_id,
+            label=ledger_label,
+            api_key_id=api_key_id,
+            anchor_policy=archive.anchor_policy,
+            bootstrap_manifest=archive.bootstrap_manifest,
+            bootstrap_hash=archive.bootstrap_hash,
+            chain_type="ledger",
+            archive_chain_id=chain_id,
+        )
+        db.add(ledger_chain)
+
+        # Link the archive to the ledger
+        archive.ledger_chain_id = ledger_chain_id
+        archive.chain_type = "archive"
+        db.commit()
+    else:
+        ledger_chain = db.query(ProvenanceChain).filter(
+            ProvenanceChain.id == ledger_chain_id
+        ).first()
+
+    # Extract the three strata
+    foundation = extract_foundation(all_objects, archive.bootstrap_manifest)
+    canonical = extract_canonical_events(all_objects)
+    epochs = compress_epochs(all_objects)
+    present = extract_present_horizon(all_objects)
+
+    # Build the Ledger document
+    ledger_version = (ledger_chain.latest_version or 0) + 1
+    doc = build_ledger_document(
+        archive_chain_label=archive.label,
+        archive_chain_id=chain_id,
+        archive_concept_doi=archive.concept_doi,
+        ledger_version=ledger_version,
+        foundation=foundation,
+        canonical_events=canonical,
+        epochs=epochs,
+        present_objects=present,
+        total_objects=len(all_objects),
+    )
+
+    # Deposit the Ledger to Zenodo (if zenodo-anchored)
+    result = {"ledger_chain_id": ledger_chain_id, "version": ledger_version, "local": True}
+
+    if ledger_chain.anchor_policy == "zenodo":
+        user_token = get_zenodo_token_for_key(api_key_id, db)
+        zen_meta = {
+            "title": f"{archive.label} — Ledger v{ledger_version}",
+            "description": f"Stratified continuity compression: {len(all_objects)} objects → {foundation['count']} foundation + {len(canonical)} canonical + {len(epochs)} epochs + {len(present)} present",
+            "filename": f"{archive.label.replace('.', '-')}_ledger_v{ledger_version}.md",
+            "keywords": ["gravity-well", "ledger", "stratified-continuity", archive.label],
+            "creators": [{"name": archive.bootstrap_manifest.get("identity", {}).get("name", "Anonymous")}] if archive.bootstrap_manifest else [{"name": "Anonymous"}],
+        }
+
+        # Related identifiers — link to Archive and GW
+        related = [
+            {"identifier": "10.5281/zenodo.19405459", "relation": "isCompiledBy", "resource_type": "software"},
+        ]
+        if archive.concept_doi:
+            related.append({"identifier": archive.concept_doi, "relation": "isSupplementTo", "resource_type": "dataset"})
+        if ledger_chain.concept_doi:
+            related.append({"identifier": ledger_chain.concept_doi, "relation": "isPartOf", "resource_type": "dataset"})
+        zen_meta["related_identifiers"] = related
+
+        try:
+            if ledger_chain.latest_record_id:
+                zen_result = await zenodo_new_version(ledger_chain.latest_record_id, doc, zen_meta, zenodo_token=user_token)
+            else:
+                zen_result = await zenodo_first_deposit(doc, zen_meta, zenodo_token=user_token)
+
+            # Update ledger chain
+            ledger_chain.latest_version = ledger_version
+            ledger_chain.latest_record_id = zen_result.get("record_id")
+            if not ledger_chain.concept_doi:
+                ledger_chain.concept_doi = zen_result.get("conceptdoi")
+                ledger_chain.concept_record_id = zen_result.get("conceptrecid")
+            db.commit()
+
+            result = {
+                "ledger_chain_id": ledger_chain_id,
+                "version": ledger_version,
+                "doi": zen_result.get("doi"),
+                "zenodo_url": f"https://doi.org/{zen_result.get('doi')}",
+                "strata": {
+                    "foundation": foundation["count"],
+                    "canonical_events": len(canonical),
+                    "epochs": len(epochs),
+                    "present_horizon": len(present),
+                    "total_archived": len(all_objects),
+                    "compression": f"{len(all_objects)}→{foundation['count'] + len(canonical) + len(epochs) + len(present)}",
+                },
+            }
+        except Exception as e:
+            # Deposit failed but ledger chain exists
+            result["error"] = str(e)[:200]
+            result["doc_length"] = len(doc)
+    else:
+        # Local deposit
+        ledger_chain.latest_version = ledger_version
+        db.commit()
+
+    # Record the deposit
+    deposit_id = str(uuid.uuid4())
+    deposit_rec = DepositRecord(
+        id=deposit_id, chain_id=ledger_chain_id, version=ledger_version,
+        doi=result.get("doi"), zenodo_record_id=result.get("record_id"),
+        object_count=len(all_objects),
+        deposited_at=datetime.now(timezone.utc),
+        bootstrap_manifest=archive.bootstrap_manifest,
+        narrative_summary=f"Ledger v{ledger_version}: {len(all_objects)} objects compressed to {foundation['count']}+{len(canonical)}+{len(epochs)}+{len(present)}",
+        deposit_document=doc,
+        anchor_policy=ledger_chain.anchor_policy,
+    )
+    db.add(deposit_rec)
+    db.commit()
+
+    return result
 
 
 # --- Drift Detection ---
