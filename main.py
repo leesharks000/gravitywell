@@ -917,6 +917,7 @@ async def zenodo_first_deposit(content: str, metadata: dict, zenodo_token: str =
                     "upload_type": "dataset",
                     "access_right": "open",
                     "license": "cc-by-sa-4.0",
+                    **({"related_identifiers": metadata["related_identifiers"]} if "related_identifiers" in metadata else {}),
                 }}
             )
             r.raise_for_status()
@@ -996,6 +997,7 @@ async def zenodo_new_version(latest_record_id: str, content: str, metadata: dict
                     "upload_type": "dataset",
                     "access_right": "open",
                     "license": "cc-by-sa-4.0",
+                    **({"related_identifiers": metadata["related_identifiers"]} if "related_identifiers" in metadata else {}),
                 }}
             )
             r.raise_for_status()
@@ -1674,10 +1676,18 @@ async def deposit(
         zen_meta = {
             "title": deposit_title,
             "description": deposit_desc,
-            "filename": f"{chain.label.replace(' ', '_')}_v{version}.md",
+            "filename": f"{chain.label.replace(' ', '_').replace('.', '-')}_v{version}.md",
             "keywords": ["gravity-well", "provenance", "continuity", chain.label],
             "creators": request.deposit_metadata.get("creators", [{"name": bootstrap.get("identity", {}).get("name", "Anonymous") if bootstrap else "Anonymous"}]),
         }
+
+        # Auto-populate relation metadata — compression survival infrastructure
+        related = []
+        if chain.concept_doi:
+            related.append({"identifier": chain.concept_doi, "relation": "isPartOf", "resource_type": "dataset"})
+        related.append({"identifier": "10.5281/zenodo.19405459", "relation": "isCompiledBy", "resource_type": "software"})
+        if related:
+            zen_meta["related_identifiers"] = related
 
         if chain.latest_record_id:
             user_token = get_zenodo_token_for_key(api_key_id, db)
