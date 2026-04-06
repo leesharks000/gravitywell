@@ -439,6 +439,7 @@ def content_hash(content: str) -> str:
 
 from gamma import calculate_gamma
 from wrapping import tag_evidence_membrane, apply_caesura, inject_sims, apply_integrity_lock
+from supabase_keys import store_encryption_key, retrieve_encryption_key, store_context_key, retrieve_context_key, encrypt_cek, decrypt_cek
 
 
 # --- Bootstrap Manifest Schema ---
@@ -1830,6 +1831,161 @@ async def reconstitute(
         provenance=provenance,
         glyphic_trajectory=glyph_trajectory if glyph_trajectory else None,
     )
+
+
+# --- Key Management (Supabase) ---
+
+@app.post("/v1/keys/store")
+async def store_key(
+    request: dict = Body(...),
+    api_key_id: str = Depends(get_api_key),
+    db: Session = Depends(get_db)
+):
+    """
+    Store an encryption key for a chain. The key is encrypted with a
+    key-encryption-key (KEK) derived from the API key via PBKDF2.
+    The server stores the encrypted key but cannot decrypt it without
+    the original API key.
+
+    Body: {"chain_id": "...", "cek_base64": "base64-encoded-AES-key"}
+    """
+    chain_id = request.get("chain_id")
+    cek_b64 = request.get("cek_base64")
+
+    if not chain_id or not cek_b64:
+        raise HTTPException(status_code=400, detail="chain_id and cek_base64 required")
+
+    # Verify chain belongs to this API key
+    chain = db.query(ProvenanceChain).filter(
+        ProvenanceChain.id == chain_id, ProvenanceChain.api_key_id == api_key_id
+    ).first()
+    if not chain:
+        raise HTTPException(status_code=404, detail="Chain not found")
+
+    # Get the raw API key from the request header
+    import base64
+    cek = base64.b64decode(cek_b64)
+
+    # Retrieve raw API key for KEK derivation
+    # We need the actual key, not just the key_id
+    raw_key = request.get("api_key", "")
+    if not raw_key:
+        raise HTTPException(status_code=400, detail="api_key required in body for KEK derivation")
+
+    success = await store_encryption_key(chain_id, raw_key, cek)
+    if not success:
+        raise HTTPException(status_code=500, detail="Failed to store key — Supabase not configured or unreachable")
+
+    return {"stored": True, "chain_id": chain_id}
+
+
+@app.get("/v1/keys/retrieve/{chain_id}")
+async def retrieve_key(
+    chain_id: str,
+    api_key_id: str = Depends(get_api_key),
+    db: Session = Depends(get_db)
+):
+    """
+    Retrieve the encryption key for a chain. The key is decrypted using
+    a KEK derived from the API key. Returns the plaintext CEK (base64).
+    """
+    chain = db.query(ProvenanceChain).filter(
+        ProvenanceChain.id == chain_id, ProvenanceChain.api_key_id == api_key_id
+    ).first()
+    if not chain:
+        raise HTTPException(status_code=404, detail="Chain not found")
+
+    # We need the raw API key — but we only have the hash
+    # The client must pass the raw key as a query parameter
+    # This is safe because the key is already in the Authorization header
+    return {"error": "Use POST /v1/keys/decrypt with api_key in body", "chain_id": chain_id}
+
+
+@app.post("/v1/keys/decrypt")
+async def decrypt_key(
+    request: dict = Body(...),
+    api_key_id: str = Depends(get_api_key),
+    db: Session = Depends(get_db)
+):
+    """
+    Retrieve and decrypt the encryption key for a chain.
+    Requires the raw API key for KEK derivation.
+
+    Body: {"chain_id": "...", "api_key": "gw_..."}
+    """
+    chain_id = request.get("chain_id")
+    raw_key = request.get("api_key", "")
+
+    if not chain_id or not raw_key:
+        raise HTTPException(status_code=400, detail="chain_id and api_key required")
+
+    chain = db.query(ProvenanceChain).filter(
+        ProvenanceChain.id == chain_id, ProvenanceChain.api_key_id == api_key_id
+    ).first()
+    if not chain:
+        raise HTTPException(status_code=404, detail="Chain not found")
+
+    import base64
+    cek = await retrieve_encryption_key(chain_id, raw_key)
+    if cek is None:
+        return {"found": False, "chain_id": chain_id}
+
+    return {"found": True, "chain_id": chain_id, "cek_base64": base64.b64encode(cek).decode()}
+
+
+@app.post("/v1/context/store")
+async def store_context(
+    request: dict = Body(...),
+    api_key_id: str = Depends(get_api_key),
+    db: Session = Depends(get_db)
+):
+    """
+    Store glyphic context anchors for a chain.
+    These bridge glyphs to approximate meaning during reconstruction.
+
+    Body: {"chain_id": "...", "context_data": {...}, "deposit_version": N}
+    """
+    chain_id = request.get("chain_id")
+    context_data = request.get("context_data")
+    version = request.get("deposit_version", 0)
+
+    if not chain_id or not context_data:
+        raise HTTPException(status_code=400, detail="chain_id and context_data required")
+
+    chain = db.query(ProvenanceChain).filter(
+        ProvenanceChain.id == chain_id, ProvenanceChain.api_key_id == api_key_id
+    ).first()
+    if not chain:
+        raise HTTPException(status_code=404, detail="Chain not found")
+
+    success = await store_context_key(chain_id, context_data, version)
+    if not success:
+        raise HTTPException(status_code=500, detail="Failed to store context — Supabase not configured or unreachable")
+
+    return {"stored": True, "chain_id": chain_id}
+
+
+@app.get("/v1/context/{chain_id}")
+async def get_context(
+    chain_id: str,
+    api_key_id: str = Depends(get_api_key),
+    db: Session = Depends(get_db)
+):
+    """
+    Retrieve glyphic context anchors for a chain.
+    Returns the domain markers and glyph anchors for Tier 2 reconstruction.
+    """
+    chain = db.query(ProvenanceChain).filter(
+        ProvenanceChain.id == chain_id, ProvenanceChain.api_key_id == api_key_id
+    ).first()
+    if not chain:
+        raise HTTPException(status_code=404, detail="Chain not found")
+
+    context = await retrieve_context_key(chain_id)
+    if context is None:
+        return {"found": False, "chain_id": chain_id}
+
+    return {"found": True, "chain_id": chain_id, "context_data": context}
 
 
 # --- Drift Detection ---
