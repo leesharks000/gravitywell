@@ -124,6 +124,11 @@ class ProvenanceChain(Base):
     archive_chain_id = Column(String, nullable=True)   # If this is a Ledger, points to its Archive
     chain_type = Column(String, default="archive")     # "archive" | "ledger"
 
+    # Lexicon ratchet — glyphic evolution tracking
+    latest_glyph = Column(Text, nullable=True)         # Most recent glyphic checksum
+    glyph_count = Column(Integer, default=0)            # Total glyphs in chain
+    lexicon_hash = Column(String, nullable=True)        # Hash of all glyphs — the ratchet state
+
 
 class StagedObject(Base):
     """
@@ -253,6 +258,15 @@ for col in ["deposit_document TEXT", "anchor_policy TEXT DEFAULT 'zenodo'"]:
 
 # Auto-migrate: add stratified continuity fields to chains (added in v0.8.0)
 for col in ["ledger_chain_id TEXT", "archive_chain_id TEXT", "chain_type TEXT DEFAULT 'archive'"]:
+    try:
+        with engine.connect() as conn:
+            conn.execute(text(f"ALTER TABLE provenance_chains ADD COLUMN {col}"))
+            conn.commit()
+    except Exception:
+        pass
+
+# Auto-migrate: add lexicon ratchet fields to chains (added in v0.8.0)
+for col in ["latest_glyph TEXT", "glyph_count INTEGER DEFAULT 0", "lexicon_hash TEXT"]:
     try:
         with engine.connect() as conn:
             conn.execute(text(f"ALTER TABLE provenance_chains ADD COLUMN {col}"))
@@ -402,6 +416,9 @@ class ReconstitutionResponse(BaseModel):
 
     # Glyphic context key (Tier 2 — bridges glyphs to approximate meaning)
     context_key: Optional[Dict[str, Any]] = None
+
+    # Lexicon ratchet state
+    lexicon_state: Optional[Dict[str, Any]] = None
 
 
 class DriftReport(BaseModel):
@@ -1423,7 +1440,7 @@ async def capture(
                         }
                         return CaptureResponse(
                             object_id=obj_id, chain_id=request.chain_id,
-                            content_hash=chash, captured_at=now.isoformat(),
+                            content_hash=obj.content_hash, captured_at=obj.captured_at,
                             visibility=request.visibility,
                             staged_count=staged_count,
                             auto_deposit=auto_deposit_result,
@@ -1764,6 +1781,17 @@ async def deposit(
                 obj.deposited = "true"
                 obj.deposit_version = version
 
+            # Update lexicon ratchet
+            glyphs = [getattr(o, 'glyphic_checksum', None) for o in objects if getattr(o, 'glyphic_checksum', None)]
+            if glyphs:
+                chain.latest_glyph = glyphs[-1]
+                chain.glyph_count = (chain.glyph_count or 0) + len(glyphs)
+                # Ratchet: hash of all glyphs in the chain — path-dependent key
+                all_glyphs = chain.lexicon_hash or ""
+                for g in glyphs:
+                    all_glyphs = content_hash(all_glyphs + g)
+                chain.lexicon_hash = all_glyphs
+
         db.commit()
 
         return DepositResponse(
@@ -1794,6 +1822,16 @@ async def deposit(
         for obj in objects:
             obj.deposited = "true"
             obj.deposit_version = version
+
+        # Update lexicon ratchet (local)
+        glyphs = [getattr(o, 'glyphic_checksum', None) for o in objects if getattr(o, 'glyphic_checksum', None)]
+        if glyphs:
+            chain.latest_glyph = glyphs[-1]
+            chain.glyph_count = (chain.glyph_count or 0) + len(glyphs)
+            all_glyphs = chain.lexicon_hash or ""
+            for g in glyphs:
+                all_glyphs = content_hash(all_glyphs + g)
+            chain.lexicon_hash = all_glyphs
 
         db.commit()
 
@@ -1829,6 +1867,15 @@ async def reconstitute(
     if not chain:
         raise HTTPException(status_code=404, detail="Chain not found.")
 
+    # Ledger-aware: if this chain has a linked Ledger with deposits, prefer it
+    ledger_narrative = None
+    if getattr(chain, 'ledger_chain_id', None):
+        ledger_latest = db.query(DepositRecord).filter(
+            DepositRecord.chain_id == chain.ledger_chain_id
+        ).order_by(DepositRecord.version.desc()).first()
+        if ledger_latest and ledger_latest.narrative_summary:
+            ledger_narrative = ledger_latest.narrative_summary
+
     latest = db.query(DepositRecord).filter(
         DepositRecord.chain_id == chain_id
     ).order_by(DepositRecord.version.desc()).first()
@@ -1842,6 +1889,7 @@ async def reconstitute(
         "deposited_at": latest.deposited_at.isoformat() if latest else None,
         "bootstrap_hash": latest.bootstrap_hash if latest else None,
         "zenodo_fallback": f"https://doi.org/{chain.concept_doi}" if chain.concept_doi else None,
+        "ledger_chain_id": getattr(chain, 'ledger_chain_id', None),
     }
 
     # Collect glyphic trajectory from deposited objects
@@ -1859,17 +1907,30 @@ async def reconstitute(
     try:
         context_key = await retrieve_context_key(chain_id)
     except Exception:
-        pass  # Supabase unavailable — reconstitute still works without Tier 2
+        pass
+
+    # Lexicon ratchet state
+    lexicon = None
+    if getattr(chain, 'latest_glyph', None) or getattr(chain, 'lexicon_hash', None):
+        lexicon = {
+            "latest_glyph": chain.latest_glyph,
+            "glyph_count": getattr(chain, 'glyph_count', 0) or 0,
+            "lexicon_hash": chain.lexicon_hash,
+        }
+
+    # Use Ledger narrative if available (bounded reconstitution), fall back to Archive
+    narrative = ledger_narrative or (latest.narrative_summary if latest else None)
 
     return ReconstitutionResponse(
         chain_id=chain.id,
         label=chain.label,
         bootstrap=chain.bootstrap_manifest or (latest.bootstrap_manifest if latest else None),
         tether_handoff_block=latest.tether_handoff_block if latest else None,
-        narrative_summary=latest.narrative_summary if latest else None,
+        narrative_summary=narrative,
         provenance=provenance,
         glyphic_trajectory=glyph_trajectory if glyph_trajectory else None,
         context_key=context_key,
+        lexicon_state=lexicon,
     )
 
 
@@ -2147,14 +2208,15 @@ async def generate_ledger(
             ledger_chain.latest_version = ledger_version
             ledger_chain.latest_record_id = zen_result.get("record_id")
             if not ledger_chain.concept_doi:
-                ledger_chain.concept_doi = zen_result.get("conceptdoi")
-                ledger_chain.concept_record_id = zen_result.get("conceptrecid")
+                ledger_chain.concept_doi = zen_result.get("concept_doi")
+                ledger_chain.concept_record_id = zen_result.get("concept_record_id")
             db.commit()
 
             result = {
                 "ledger_chain_id": ledger_chain_id,
                 "version": ledger_version,
                 "doi": zen_result.get("doi"),
+                "record_id": zen_result.get("record_id"),
                 "zenodo_url": f"https://doi.org/{zen_result.get('doi')}",
                 "strata": {
                     "foundation": foundation["count"],
