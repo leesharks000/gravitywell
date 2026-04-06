@@ -1,0 +1,7 @@
+User-agent: *
+Allow: /
+Disallow: /v1/
+Disallow: /docs
+Disallow: /mcp/
+
+Sitemap: https://gravitywell-1.onrender.com/sitemap.xml

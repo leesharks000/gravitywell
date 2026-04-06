@@ -2841,6 +2841,11 @@ async def dashboard():
     return FileResponse("dashboard.html", media_type="text/html")
 
 
+@app.get("/robots.txt", response_class=FileResponse)
+async def robots():
+    return FileResponse("robots.txt", media_type="text/plain")
+
+
 # --- Health & Schema ---
 
 @app.get("/v1/health")
