@@ -3392,15 +3392,34 @@ async def mcp_wrapped_app(scope, receive, send):
     """ASGI wrapper: intercepts /mcp/* for MCP protocol, everything else goes to FastAPI."""
     if scope["type"] == "http":
         path = scope.get("path", "")
-        if path == "/mcp/sse" or path == "/mcp":
-            # Streamable HTTP transport (what Claude's MCP client uses)
+        if path == "/mcp/sse":
+            # Legacy SSE transport
             try:
-                await http_session_manager.handle_request(scope, receive, send)
+                async with sse_transport.connect_sse(scope, receive, send) as streams:
+                    await mcp_server.run(
+                        streams[0], streams[1],
+                        mcp_server.create_initialization_options()
+                    )
             except Exception as e:
                 try:
                     await send({"type": "http.response.start", "status": 500,
                                 "headers": [[b"content-type", b"text/plain"]]})
-                    await send({"type": "http.response.body", "body": f"MCP error: {e}".encode()})
+                    await send({"type": "http.response.body", "body": f"MCP SSE error: {e}".encode()})
+                except Exception:
+                    pass
+            return
+        elif path == "/mcp":
+            # Streamable HTTP transport (newer protocol)
+            try:
+                await http_session_manager.handle_request(scope, receive, send)
+            except Exception as e:
+                import traceback
+                err = traceback.format_exc()
+                print(f"[MCP streamable HTTP error] {err}")
+                try:
+                    await send({"type": "http.response.start", "status": 500,
+                                "headers": [[b"content-type", b"text/plain"]]})
+                    await send({"type": "http.response.body", "body": f"MCP HTTP error: {e}\n{err}".encode()})
                 except Exception:
                     pass
             return
