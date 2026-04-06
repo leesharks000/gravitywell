@@ -1395,12 +1395,17 @@ async def capture(
 
                 auto_version = chain.latest_version + 1
 
-                # Get the most recent bootstrap manifest from previous deposits
+                # Get bootstrap — chain stores it architecturally
                 prev_deposit = db.query(DepositRecord).filter(
                     DepositRecord.chain_id == request.chain_id
                 ).order_by(DepositRecord.version.desc()).first()
-                auto_bootstrap = prev_deposit.bootstrap_manifest if prev_deposit else None
-                auto_thb = prev_deposit.tether_handoff_block if prev_deposit else None
+                auto_bootstrap = chain.bootstrap_manifest or (prev_deposit.bootstrap_manifest if prev_deposit else None)
+                auto_thb = {
+                    "state_summary": f"Auto-deposit v{auto_version} from {chain.label}",
+                    "objects_in_deposit": len(auto_objects),
+                    "chain_version": auto_version,
+                    "trigger": "threshold" if chain.auto_deposit_threshold else "interval",
+                }
 
                 # Narrative compression
                 auto_narrative = await auto_generate_narrative(auto_objects, chain.label)
