@@ -3041,6 +3041,16 @@ async def robots():
     return FileResponse("robots.txt", media_type="text/plain")
 
 
+@app.get("/logo.svg", response_class=FileResponse)
+async def logo():
+    return FileResponse("logo.svg", media_type="image/svg+xml")
+
+
+@app.get("/favicon.svg", response_class=FileResponse)
+async def favicon():
+    return FileResponse("logo.svg", media_type="image/svg+xml")
+
+
 # --- Health & Schema ---
 
 @app.get("/v1/health")
