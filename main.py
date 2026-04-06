@@ -3258,7 +3258,6 @@ async def oauth_authorization_server_metadata():
         "response_types_supported": ["code"],
         "grant_types_supported": ["authorization_code"],
         "code_challenge_methods_supported": ["S256"],
-        "registration_endpoint": "https://gravitywell-1.onrender.com/v1/register",
     }
 
 
