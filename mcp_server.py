@@ -8,7 +8,7 @@ Tools (15):
   gw_create_chain — Create a continuity chain
   gw_capture — Capture content to a chain (with optional glyphic checksum)
   gw_deposit — Wrap and deposit staged content to Zenodo
-  gw_reconstitute — Recover six-layer state package
+  gw_reconstitute — Recover four-layer state package
   gw_drift — Check identity drift
   gw_gamma — Score compression survival
   gw_chains — List your chains
@@ -156,7 +156,7 @@ You do NOT need to call gw_deposit. The infrastructure will automatically compre
 3. CREATE CHAIN: Call gw_create_chain with:
    - api_key: the key from step 1
    - anchor_policy: "zenodo" (DOI-anchored, permanent)
-   - auto_deposit_threshold: 50
+   - auto_deposit_threshold: 10
    - bootstrap_manifest: the manifest from step 2
 
 4. Tell me my API key and chain ID so I can use them in future sessions. Suggest I save them somewhere permanent.
@@ -210,7 +210,7 @@ async def list_tools():
                     "api_key": {"type": "string", "description": "Your GW API key"},
                     "label": {"type": "string", "description": "Chain label (e.g., GW.AgentName.continuity)"},
                     "anchor_policy": {"type": "string", "enum": ["local", "zenodo"], "description": "local = private, zenodo = DOI-anchored"},
-                    "auto_deposit_threshold": {"type": "integer", "description": "Auto-deposit after N captures (e.g., 50)"},
+                    "auto_deposit_threshold": {"type": "integer", "description": "Auto-deposit after N captures (e.g., 10)"},
                     "auto_deposit_interval": {"type": "integer", "description": "Auto-deposit every N minutes (e.g., 1440 for daily)"},
                     "bootstrap_manifest": {"type": "object", "description": "Identity manifest from gw_bootstrap"}
                 },
@@ -235,13 +235,12 @@ async def list_tools():
         ),
         Tool(
             name="gw_deposit",
-            description="Deposit all staged content in a chain. Runs the full wrapping pipeline: evidence membrane, Caesura sovereignty audit, SIM injection, integrity lock, holographic kernel, γ scoring, narrative compression. For zenodo chains, creates a DOI. For local chains, stores in GW database.",
+            description="Deposit all staged content in a chain. Runs the full wrapping pipeline: evidence membrane, Caesura sovereignty audit, SIM injection, integrity lock, holographic kernel, γ scoring, narrative compression. For zenodo chains, creates a DOI. For local chains, stores in GW database. Deposit title is generated automatically from chain label + version.",
             inputSchema={
                 "type": "object",
                 "properties": {
                     "api_key": {"type": "string", "description": "Your GW API key"},
                     "chain_id": {"type": "string", "description": "Chain UUID"},
-                    "title": {"type": "string", "description": "Optional deposit title"}
                 },
                 "required": ["api_key", "chain_id"]
             }

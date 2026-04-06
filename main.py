@@ -1269,13 +1269,18 @@ async def create_chain(
         bootstrap_hash = content_hash(json.dumps(
             request.bootstrap_manifest, sort_keys=True, separators=(',', ':')))
 
-    # Generate label from bootstrap identity if not provided
+    # Enforce GW. naming convention — architectural, not optional
+    # Client can suggest a label but it MUST start with GW.
     label = request.label
-    if not label and request.bootstrap_manifest:
+    if label:
+        # Normalize: ensure GW. prefix
+        if not label.startswith("GW."):
+            # Extract meaningful part and reformat
+            label = f"GW.{label}"
+    elif request.bootstrap_manifest:
         agent_name = request.bootstrap_manifest.get("identity", {}).get("name", "unknown")
-        # GW naming convention: GW.{agent_name}.{chain_id_short}
         label = f"GW.{agent_name}.{chain_id[:8]}"
-    elif not label:
+    else:
         label = f"GW.anon.{chain_id[:8]}"
 
     chain = ProvenanceChain(
@@ -1752,19 +1757,15 @@ async def deposit(
 
     if policy == "zenodo":
         # === ZENODO ANCHOR: push to Zenodo, get DOI ===
-        deposit_title = request.deposit_metadata.get(
-            "title", f"{chain.label} — v{version}"
-        )
-        deposit_desc = request.deposit_metadata.get(
-            "description",
-            f"Provenance deposit v{version}: {len(objects)} objects from {chain.label}"
-        )
+        # Deposit naming is architectural — always {chain.label} — v{version}
+        deposit_title = f"{chain.label} — v{version}"
+        deposit_desc = f"Provenance deposit v{version}: {len(objects)} objects from {chain.label}"
         zen_meta = {
             "title": deposit_title,
             "description": deposit_desc,
             "filename": f"{chain.label.replace(' ', '_').replace('.', '-')}_v{version}.md",
             "keywords": ["gravity-well", "provenance", "continuity", chain.label],
-            "creators": request.deposit_metadata.get("creators", [{"name": bootstrap.get("identity", {}).get("name", "Anonymous") if bootstrap else "Anonymous"}]),
+            "creators": [{"name": bootstrap.get("identity", {}).get("name", "Anonymous") if bootstrap else "Anonymous"}],
         }
 
         # Auto-populate relation metadata — compression survival infrastructure
