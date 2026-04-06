@@ -2970,7 +2970,7 @@ async def auto_deposit_worker():
             print(f"[auto-deposit-worker] Worker cycle error: {e}")
 
 
-@app.on_event("startup")
+@_fastapi_app.on_event("startup")
 async def start_background_worker():
     """Launch the auto-deposit background worker on server start."""
     asyncio.create_task(auto_deposit_worker())
