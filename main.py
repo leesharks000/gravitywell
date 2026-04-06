@@ -3238,47 +3238,14 @@ if __name__ == "__main__":
 
 
 # --- OAuth Provider (for MCP connectors and external clients) ---
+# Note: OAuth discovery (/.well-known/) intentionally NOT served.
+# MCP connects without auth; auth is per-tool-call via api_key parameter.
+# OAuth endpoints below are for future use when transport-layer auth is needed.
 
 # Temporary auth code storage (in-memory, short-lived)
-# In production, use Redis or database. For now, this works.
 _oauth_codes: Dict[str, Dict[str, Any]] = {}
 
 from fastapi.responses import HTMLResponse, RedirectResponse
-
-
-# --- OAuth Discovery (RFC 8414) ---
-
-@app.get("/.well-known/oauth-authorization-server")
-async def oauth_authorization_server_metadata():
-    """OAuth 2.0 Authorization Server Metadata — tells MCP clients where to authenticate."""
-    return {
-        "issuer": "https://gravitywell-1.onrender.com",
-        "authorization_endpoint": "https://gravitywell-1.onrender.com/oauth/authorize",
-        "token_endpoint": "https://gravitywell-1.onrender.com/oauth/token",
-        "response_types_supported": ["code"],
-        "grant_types_supported": ["authorization_code"],
-        "code_challenge_methods_supported": ["S256"],
-    }
-
-
-@app.get("/.well-known/oauth-protected-resource")
-async def oauth_protected_resource():
-    """OAuth Protected Resource Metadata — tells MCP clients this resource requires auth."""
-    return {
-        "resource": "https://gravitywell-1.onrender.com",
-        "authorization_servers": ["https://gravitywell-1.onrender.com"],
-        "bearer_methods_supported": ["header"],
-    }
-
-
-# Also serve at the MCP-specific path Claude checks
-@app.get("/.well-known/oauth-protected-resource/mcp/sse")
-async def oauth_protected_resource_mcp():
-    return {
-        "resource": "https://gravitywell-1.onrender.com/mcp/sse",
-        "authorization_servers": ["https://gravitywell-1.onrender.com"],
-        "bearer_methods_supported": ["header"],
-    }
 
 
 @app.get("/oauth/authorize")
