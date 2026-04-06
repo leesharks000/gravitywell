@@ -1374,7 +1374,10 @@ async def capture(
     if chain.auto_deposit_threshold and staged_count >= chain.auto_deposit_threshold:
         auto_deposit_triggered = True
     elif chain.auto_deposit_interval and chain.last_auto_deposit:
-        elapsed = (datetime.now(timezone.utc) - chain.last_auto_deposit).total_seconds() / 60
+        last = chain.last_auto_deposit
+        if last.tzinfo is None:
+            last = last.replace(tzinfo=timezone.utc)
+        elapsed = (datetime.now(timezone.utc) - last).total_seconds() / 60
         if elapsed >= chain.auto_deposit_interval and staged_count > 0:
             auto_deposit_triggered = True
     elif chain.auto_deposit_interval and not chain.last_auto_deposit and staged_count > 0:
@@ -2974,7 +2977,11 @@ async def auto_deposit_worker():
                     try:
                         # Check if interval has elapsed
                         if chain.last_auto_deposit:
-                            elapsed = (now - chain.last_auto_deposit).total_seconds() / 60
+                            # Ensure timezone-aware comparison
+                            last = chain.last_auto_deposit
+                            if last.tzinfo is None:
+                                last = last.replace(tzinfo=timezone.utc)
+                            elapsed = (now - last).total_seconds() / 60
                             if elapsed < chain.auto_deposit_interval:
                                 continue
                         # else: no previous deposit, interval is due
@@ -3114,6 +3121,13 @@ async def start_background_worker():
 
 
 # --- Landing Page ---
+
+@app.head("/")
+async def landing_page_head():
+    """Render health check sends HEAD — return 200."""
+    from fastapi.responses import Response
+    return Response(status_code=200)
+
 
 @app.get("/", response_class=FileResponse)
 async def landing_page():
