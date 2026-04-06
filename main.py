@@ -3102,12 +3102,27 @@ async def oauth_authorize_submit(
     db.add(new_key)
     db.commit()
 
+    # Auto-create a default continuity chain for this user
+    chain_id = str(uuid.uuid4())
+    chain_label = f"GW.{name.replace(' ', '-')}.continuity"
+    default_chain = ProvenanceChain(
+        id=chain_id,
+        label=chain_label,
+        api_key_id=key_id,
+        anchor_policy="zenodo",
+        auto_deposit_threshold=50,
+    )
+    db.add(default_chain)
+    db.commit()
+
     # Generate auth code (one-time, expires in 5 minutes)
     import time
     auth_code = secrets.token_urlsafe(32)
     _oauth_codes[auth_code] = {
         "api_key": raw_key,
         "key_id": key_id,
+        "chain_id": chain_id,
+        "chain_label": chain_label,
         "label": name,
         "created_at": time.time(),
         "redirect_uri": redirect_uri,
@@ -3151,6 +3166,8 @@ async def oauth_token(request: dict = Body(...)):
         "info": {
             "label": code_data["label"],
             "key_id": code_data["key_id"],
+            "chain_id": code_data.get("chain_id"),
+            "chain_label": code_data.get("chain_label"),
         }
     }
 

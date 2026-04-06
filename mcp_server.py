@@ -2,17 +2,26 @@
 Gravity Well MCP Server — Model Context Protocol integration.
 Gives Claude (and any MCP-capable model) native access to continuity infrastructure.
 
-Tools:
+Tools (14):
   gw_register — Create an API key
   gw_bootstrap — Generate identity manifest
   gw_create_chain — Create a continuity chain
-  gw_capture — Capture content to a chain
-  gw_deposit — Wrap and deposit staged content
-  gw_reconstitute — Recover four-layer state package
+  gw_capture — Capture content to a chain (with optional glyphic checksum)
+  gw_deposit — Wrap and deposit staged content to Zenodo
+  gw_reconstitute — Recover six-layer state package
   gw_drift — Check identity drift
   gw_gamma — Score compression survival
   gw_chains — List your chains
   gw_console — Continuity console for a chain
+  gw_store_key — Store encryption key in Supabase (encrypted with KEK)
+  gw_retrieve_key — Retrieve and decrypt encryption key
+  gw_store_context — Store glyphic context anchors (Tier 2)
+  gw_retrieve_context — Retrieve context anchors
+
+Prompts (3):
+  continuity_start — Reconstitute and resume from last deposit
+  continuity_end — Translate to glyph, encrypt, capture, deposit
+  setup_continuity — First-time registration + chain creation
 """
 
 import httpx
