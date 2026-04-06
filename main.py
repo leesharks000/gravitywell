@@ -372,6 +372,9 @@ class ReconstitutionResponse(BaseModel):
     chain_id: str
     label: str
 
+    # Glyphic trajectory (for ratcheting — condition next glyph on this)
+    glyphic_trajectory: Optional[List[str]] = None
+
 
 class DriftReport(BaseModel):
     """Output of drift detection comparison — human-readable + machine-parseable."""
@@ -1808,13 +1811,24 @@ async def reconstitute(
         "zenodo_fallback": f"https://doi.org/{chain.concept_doi}" if chain.concept_doi else None,
     }
 
+    # Collect glyphic trajectory from deposited objects
+    glyph_trajectory = []
+    if latest:
+        deposited_objects = db.query(StagedObject).filter(
+            StagedObject.chain_id == chain_id,
+            StagedObject.deposited == "true",
+            StagedObject.glyphic_checksum.isnot(None)
+        ).order_by(StagedObject.captured_at).all()
+        glyph_trajectory = [o.glyphic_checksum for o in deposited_objects]
+
     return ReconstitutionResponse(
         chain_id=chain.id,
         label=chain.label,
-        bootstrap=latest.bootstrap_manifest if latest else None,
+        bootstrap=chain.bootstrap_manifest or (latest.bootstrap_manifest if latest else None),
         tether_handoff_block=latest.tether_handoff_block if latest else None,
         narrative_summary=latest.narrative_summary if latest else None,
         provenance=provenance,
+        glyphic_trajectory=glyph_trajectory if glyph_trajectory else None,
     )
 
 
