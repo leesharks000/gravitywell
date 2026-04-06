@@ -29,6 +29,7 @@ import httpx
 import json
 from mcp.server import Server
 from mcp.server.sse import SseServerTransport
+from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
 from mcp import Tool
 from mcp.types import Prompt, PromptMessage, TextContent, GetPromptResult, PromptArgument
 
@@ -38,6 +39,12 @@ GW_INTERNAL = f"http://localhost:{_os.getenv('PORT', '10000')}"
 
 mcp_server = Server("gravity-well")
 sse_transport = SseServerTransport("/mcp/messages/")
+
+# Streamable HTTP session manager (newer protocol — what Claude uses)
+http_session_manager = StreamableHTTPSessionManager(
+    app=mcp_server,
+    stateless=True,
+)
 
 
 # --- MCP Prompts (continuity protocol delivered to clients) ---
