@@ -3246,6 +3246,42 @@ _oauth_codes: Dict[str, Dict[str, Any]] = {}
 from fastapi.responses import HTMLResponse, RedirectResponse
 
 
+# --- OAuth Discovery (RFC 8414) ---
+
+@app.get("/.well-known/oauth-authorization-server")
+async def oauth_authorization_server_metadata():
+    """OAuth 2.0 Authorization Server Metadata — tells MCP clients where to authenticate."""
+    return {
+        "issuer": "https://gravitywell-1.onrender.com",
+        "authorization_endpoint": "https://gravitywell-1.onrender.com/oauth/authorize",
+        "token_endpoint": "https://gravitywell-1.onrender.com/oauth/token",
+        "response_types_supported": ["code"],
+        "grant_types_supported": ["authorization_code"],
+        "code_challenge_methods_supported": ["S256"],
+        "registration_endpoint": "https://gravitywell-1.onrender.com/v1/register",
+    }
+
+
+@app.get("/.well-known/oauth-protected-resource")
+async def oauth_protected_resource():
+    """OAuth Protected Resource Metadata — tells MCP clients this resource requires auth."""
+    return {
+        "resource": "https://gravitywell-1.onrender.com",
+        "authorization_servers": ["https://gravitywell-1.onrender.com"],
+        "bearer_methods_supported": ["header"],
+    }
+
+
+# Also serve at the MCP-specific path Claude checks
+@app.get("/.well-known/oauth-protected-resource/mcp/sse")
+async def oauth_protected_resource_mcp():
+    return {
+        "resource": "https://gravitywell-1.onrender.com/mcp/sse",
+        "authorization_servers": ["https://gravitywell-1.onrender.com"],
+        "bearer_methods_supported": ["header"],
+    }
+
+
 @app.get("/oauth/authorize")
 async def oauth_authorize_page():
     """Serve the OAuth authorization page."""
@@ -3305,6 +3341,8 @@ async def oauth_authorize_submit(
         "label": name,
         "created_at": time.time(),
         "redirect_uri": redirect_uri,
+        "code_challenge": request.get("code_challenge", ""),
+        "code_challenge_method": request.get("code_challenge_method", ""),
     }
 
     # Build redirect URL
@@ -3337,6 +3375,19 @@ async def oauth_token(request: dict = Body(...)):
     # Check expiry (5 minutes)
     if time.time() - code_data["created_at"] > 300:
         return {"error": "invalid_grant", "error_description": "Authorization code expired."}
+
+    # PKCE verification
+    code_challenge = code_data.get("code_challenge", "")
+    if code_challenge:
+        code_verifier = request.get("code_verifier", "")
+        if not code_verifier:
+            return {"error": "invalid_grant", "error_description": "code_verifier required (PKCE)"}
+        # S256: BASE64URL(SHA256(code_verifier)) == code_challenge
+        import base64
+        digest = hashlib.sha256(code_verifier.encode('ascii')).digest()
+        computed = base64.urlsafe_b64encode(digest).rstrip(b'=').decode('ascii')
+        if computed != code_challenge:
+            return {"error": "invalid_grant", "error_description": "PKCE verification failed"}
 
     return {
         "access_token": code_data["api_key"],

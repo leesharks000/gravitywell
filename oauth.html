@@ -68,6 +68,10 @@ document.getElementById('client_id').value = params.get('client_id') || '';
 document.getElementById('redirect_uri').value = params.get('redirect_uri') || '';
 document.getElementById('state').value = params.get('state') || '';
 
+// PKCE params
+const code_challenge = params.get('code_challenge') || '';
+const code_challenge_method = params.get('code_challenge_method') || '';
+
 async function handleAuth(e) {
   e.preventDefault();
   const errEl = document.getElementById('error');
@@ -85,7 +89,7 @@ async function handleAuth(e) {
     const resp = await fetch('/oauth/authorize/submit', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, email, redirect_uri, state }),
+      body: JSON.stringify({ name, email, redirect_uri, state, code_challenge, code_challenge_method }),
     });
     const data = await resp.json();
 
