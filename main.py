@@ -2891,6 +2891,103 @@ if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
 
 
+# --- OAuth Provider (for MCP connectors and external clients) ---
+
+# Temporary auth code storage (in-memory, short-lived)
+# In production, use Redis or database. For now, this works.
+_oauth_codes: Dict[str, Dict[str, Any]] = {}
+
+from fastapi.responses import HTMLResponse, RedirectResponse
+
+
+@app.get("/oauth/authorize")
+async def oauth_authorize_page():
+    """Serve the OAuth authorization page."""
+    return FileResponse("oauth.html", media_type="text/html")
+
+
+@app.post("/oauth/authorize/submit")
+async def oauth_authorize_submit(
+    request: dict = Body(...),
+    db: Session = Depends(get_db)
+):
+    """
+    Handle the authorization form submission.
+    Creates an API key, generates an auth code, returns redirect URL.
+    """
+    name = request.get("name", "").strip()
+    email = request.get("email", "").strip()
+    redirect_uri = request.get("redirect_uri", "")
+    state = request.get("state", "")
+
+    if not name:
+        return {"error": "Name required."}
+    if not redirect_uri:
+        return {"error": "No redirect URI."}
+
+    # Create API key for this user
+    raw_key = f"gw_{secrets.token_urlsafe(32)}"
+    key_id = str(uuid.uuid4())
+    new_key = ApiKey(
+        id=key_id, key_hash=hash_key(raw_key),
+        label=name, is_active="true",
+    )
+    db.add(new_key)
+    db.commit()
+
+    # Generate auth code (one-time, expires in 5 minutes)
+    import time
+    auth_code = secrets.token_urlsafe(32)
+    _oauth_codes[auth_code] = {
+        "api_key": raw_key,
+        "key_id": key_id,
+        "label": name,
+        "created_at": time.time(),
+        "redirect_uri": redirect_uri,
+    }
+
+    # Build redirect URL
+    separator = "&" if "?" in redirect_uri else "?"
+    redirect_url = f"{redirect_uri}{separator}code={auth_code}"
+    if state:
+        redirect_url += f"&state={state}"
+
+    return {"redirect_url": redirect_url}
+
+
+@app.post("/oauth/token")
+async def oauth_token(request: dict = Body(...)):
+    """
+    Exchange authorization code for access token.
+    Standard OAuth 2.0 token endpoint.
+    """
+    import time
+    grant_type = request.get("grant_type", "")
+    code = request.get("code", "")
+
+    if grant_type != "authorization_code":
+        return {"error": "unsupported_grant_type"}
+
+    if code not in _oauth_codes:
+        return {"error": "invalid_grant", "error_description": "Authorization code not found or already used."}
+
+    code_data = _oauth_codes.pop(code)  # One-time use
+
+    # Check expiry (5 minutes)
+    if time.time() - code_data["created_at"] > 300:
+        return {"error": "invalid_grant", "error_description": "Authorization code expired."}
+
+    return {
+        "access_token": code_data["api_key"],
+        "token_type": "Bearer",
+        "scope": "read write",
+        "info": {
+            "label": code_data["label"],
+            "key_id": code_data["key_id"],
+        }
+    }
+
+
 # --- MCP ASGI Wrapper (MUST BE LAST — replaces app for uvicorn) ---
 # MCP needs raw ASGI (scope, receive, send). FastAPI's route system can't provide that.
 # We wrap the entire app: /mcp/* goes to MCP SDK, everything else goes to FastAPI.

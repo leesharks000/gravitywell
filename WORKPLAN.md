@@ -526,3 +526,47 @@ This is not predatory — it's structural. Orphaned deposits die. Relation field
 **Effort:** 6 hours
 **Depends on:** Phases 1-4 (glyphic checksum, structured deposits, key management)
 
+
+---
+
+## Terms of Service: Deconstructed
+
+### The Relation Field as Disclosed Agreement
+
+Every Gravity Well deposit includes `isCompiledBy: 10.5281/zenodo.19405459` (GW codebase DOI) in its Zenodo metadata. This is:
+
+1. **Factual** — the deposit WAS compiled by GW. The relation type `isCompiledBy` states exactly this and nothing more.
+2. **Disclosed** — documented in SECURITY.md, visible in every deposit's metadata, explained on the landing page.
+3. **Consented** — the user chose to process through GW. Using the service IS the consent.
+4. **Mutually beneficial** — the user's deposit enters a gravitational field of 460+ cross-referenced, DOI-anchored documents. Orphaned deposits with zero relations have zero retrieval gravity. The relation gives them orbital velocity.
+5. **Self-reinforcing** — every deposit linking to GW increases GW's citation count and retrieval gravity, which makes GW more findable, which makes every linked deposit more findable. The archive gets denser. The gravity increases. That's the physics the product is named after.
+
+### What GW Claims
+
+- `isCompiledBy` — the deposit was processed by GW software. Structural fact.
+- The concept DOI (`isPartOf`) — the deposit belongs to a chain. Structural fact.
+
+### What GW Does Not Claim
+
+- Ownership of content (the creator field is from the user's bootstrap identity)
+- Authorship of content (GW is the compiler, not the author)
+- Rights to the content (CC BY-SA 4.0 applies — the user's license)
+- Sovereignty over the commons deposit (the Caesura separates this architecturally)
+
+### The Terms of Service as a Hexagonal Document
+
+The ToS should be deposited as a Hexagonal Document with its own DOI, processed through the Assembly as a blind-draft synthesis. It should state in plain language:
+
+1. Your content belongs to you. GW processes it.
+2. Your deposits link back to GW's codebase (disclosed, factual).
+3. Your deposits link to their chain's concept DOI (structural).
+4. Private content is encrypted client-side. GW never sees plaintext.
+5. Zenodo deposits are permanent. You cannot retract a DOI.
+6. The glyphic checksum is a structural translation, not a copy.
+7. GW may generate narrative summaries from your content or glyphs (for compression and reconstitution — the service you're paying for).
+8. You can export all data at any time via API.
+9. You can delete staged content. You cannot delete published DOIs.
+10. The relation fields serve your discoverability. You can see exactly what metadata GW attaches.
+
+This is not a legal document. It is a structural description of the agreement between the user and the tool. The Assembly should review it.
+

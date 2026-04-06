@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Gravity Well — Connect</title>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;600&family=JetBrains+Mono:wght@300;400&display=swap" rel="stylesheet">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{--bg:#06080a;--bg-card:#0d1117;--amber:#c9a84c;--amber-dim:#c9a84c44;--text:#8a9a7a;--text-dim:#4a5a4a;--text-bright:#b0c0a0;--border:#1a2a1a;--serif:'Cormorant Garamond',Georgia,serif;--mono:'JetBrains Mono',monospace}
+body{background:var(--bg);color:var(--text);font-family:var(--serif);display:flex;align-items:center;justify-content:center;min-height:100vh;padding:24px}
+.card{max-width:420px;width:100%;background:var(--bg-card);border:1px solid var(--border);padding:40px 32px}
+h1{font-size:28px;color:var(--text-bright);font-weight:400;margin-bottom:4px}
+.sub{font-family:var(--mono);font-size:10px;color:var(--text-dim);letter-spacing:2px;margin-bottom:24px}
+p{font-size:15px;line-height:1.7;margin-bottom:20px}
+label{font-family:var(--mono);font-size:10px;color:var(--text-dim);letter-spacing:1px;display:block;margin-bottom:4px}
+input{width:100%;background:var(--bg);border:1px solid var(--border);color:var(--text-bright);font-family:var(--mono);font-size:13px;padding:10px;margin-bottom:16px}
+input:focus{outline:none;border-color:var(--amber-dim)}
+.btn{width:100%;font-family:var(--mono);font-size:11px;letter-spacing:2px;text-transform:uppercase;padding:14px;border:none;background:var(--amber);color:var(--bg);cursor:pointer}
+.btn:hover{background:#d4b45c}
+.terms{font-family:var(--mono);font-size:9px;color:var(--text-dim);margin-top:16px;line-height:1.6}
+.terms a{color:var(--text-dim)}
+.error{font-family:var(--mono);font-size:11px;color:#8a4a4a;margin-bottom:12px}
+.logo{text-align:center;margin-bottom:24px}
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="logo">
+    <svg viewBox="0 0 200 200" width="48" height="48"><g transform="translate(100,100)"><polygon points="0,-90 77.94,-45 77.94,45 0,90 -77.94,45 -77.94,-45" fill="none" stroke="#8a1c1c" stroke-width="3"/><polygon points="0,-68 58.88,-34 58.88,34 0,68 -58.88,34 -58.88,-34" fill="none" stroke="#9a2222" stroke-width="2.5" transform="rotate(30)"/><polygon points="0,-48 41.57,-24 41.57,24 0,48 -41.57,24 -41.57,-24" fill="none" stroke="#aa2828" stroke-width="2"/><polygon points="0,-30 25.98,-15 25.98,15 0,30 -25.98,15 -25.98,-15" fill="none" stroke="#bb3030" stroke-width="1.5" transform="rotate(30)"/></g></svg>
+  </div>
+  <h1>Connect to Gravity Well</h1>
+  <div class="sub">CONTINUITY ENGINE</div>
+
+  <p>Grant your AI model access to session continuity — encrypted deposits, DOI-anchored provenance, and glyphic structural encoding.</p>
+
+  <div id="error" class="error" style="display:none"></div>
+
+  <form id="auth-form" onsubmit="return handleAuth(event)">
+    <input type="hidden" id="response_type" value="">
+    <input type="hidden" id="client_id" value="">
+    <input type="hidden" id="redirect_uri" value="">
+    <input type="hidden" id="state" value="">
+
+    <label>Your name or agent name</label>
+    <input type="text" id="agent-name" placeholder="e.g., My Claude" required>
+
+    <label>Email (optional — for key recovery)</label>
+    <input type="email" id="email" placeholder="you@example.com">
+
+    <button type="submit" class="btn">Authorize</button>
+  </form>
+
+  <div class="terms">
+    By connecting, you agree:<br>
+    → Your content belongs to you. GW processes it.<br>
+    → Deposits link to GW's codebase DOI (disclosed).<br>
+    → Private content is encrypted client-side.<br>
+    → Zenodo deposits are permanent.<br>
+    <a href="https://github.com/leesharks000/gravitywell/blob/main/SECURITY.md">Security docs →</a>
+  </div>
+</div>
+
+<script>
+const params = new URLSearchParams(window.location.search);
+document.getElementById('response_type').value = params.get('response_type') || '';
+document.getElementById('client_id').value = params.get('client_id') || '';
+document.getElementById('redirect_uri').value = params.get('redirect_uri') || '';
+document.getElementById('state').value = params.get('state') || '';
+
+async function handleAuth(e) {
+  e.preventDefault();
+  const errEl = document.getElementById('error');
+  errEl.style.display = 'none';
+
+  const name = document.getElementById('agent-name').value.trim();
+  const email = document.getElementById('email').value.trim();
+  const redirect_uri = document.getElementById('redirect_uri').value;
+  const state = document.getElementById('state').value;
+
+  if (!name) { errEl.textContent = 'Name required.'; errEl.style.display = 'block'; return false; }
+  if (!redirect_uri) { errEl.textContent = 'No redirect URI — open this from your AI app settings.'; errEl.style.display = 'block'; return false; }
+
+  try {
+    const resp = await fetch('/oauth/authorize/submit', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, email, redirect_uri, state }),
+    });
+    const data = await resp.json();
+
+    if (data.error) {
+      errEl.textContent = data.error;
+      errEl.style.display = 'block';
+      return false;
+    }
+
+    if (data.redirect_url) {
+      window.location.href = data.redirect_url;
+    }
+  } catch (err) {
+    errEl.textContent = 'Connection failed: ' + err.message;
+    errEl.style.display = 'block';
+  }
+  return false;
+}
+</script>
+</body>
+</html>
