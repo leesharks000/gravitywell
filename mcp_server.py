@@ -26,7 +26,7 @@ import os as _os
 GW_INTERNAL = f"http://localhost:{_os.getenv('PORT', '10000')}"
 
 mcp_server = Server("gravity-well")
-sse_transport = SseServerTransport("/messages/")
+sse_transport = SseServerTransport("/mcp/messages/")
 
 
 @mcp_server.list_tools()

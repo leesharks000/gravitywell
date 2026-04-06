@@ -2782,27 +2782,48 @@ import asyncio
 from mcp_server import mcp_server, sse_transport
 
 
-class McpAsgiApp:
-    """Raw ASGI app for MCP — bypasses Starlette's Route system entirely."""
-    def __init__(self, server, transport):
-        self.server = server
-        self.transport = transport
+# Wrap the FastAPI app with MCP handling at the ASGI level.
+# MCP needs raw (scope, receive, send) — FastAPI's route system can't provide that.
+# So we intercept /mcp/* paths BEFORE FastAPI sees them.
 
-    async def __call__(self, scope, receive, send):
-        if scope["type"] != "http":
-            return
+_fastapi_app = app  # save reference
+
+async def mcp_wrapped_app(scope, receive, send):
+    """ASGI wrapper: intercepts /mcp/* for MCP protocol, everything else goes to FastAPI."""
+    if scope["type"] == "http":
         path = scope.get("path", "")
-        if path == "/sse" or path == "":
-            async with self.transport.connect_sse(scope, receive, send) as streams:
-                await self.server.run(
-                    streams[0], streams[1],
-                    self.server.create_initialization_options()
-                )
-        elif "/messages" in path:
-            await self.transport.handle_post_message(scope, receive, send)
+        if path == "/mcp/sse":
+            try:
+                async with sse_transport.connect_sse(scope, receive, send) as streams:
+                    await mcp_server.run(
+                        streams[0], streams[1],
+                        mcp_server.create_initialization_options()
+                    )
+            except Exception as e:
+                # If SSE fails, send error response
+                try:
+                    await send({"type": "http.response.start", "status": 500,
+                                "headers": [[b"content-type", b"text/plain"]]})
+                    await send({"type": "http.response.body", "body": f"MCP SSE error: {e}".encode()})
+                except Exception:
+                    pass
+            return
+        elif path.startswith("/mcp/messages"):
+            try:
+                await sse_transport.handle_post_message(scope, receive, send)
+            except Exception as e:
+                try:
+                    await send({"type": "http.response.start", "status": 500,
+                                "headers": [[b"content-type", b"text/plain"]]})
+                    await send({"type": "http.response.body", "body": f"MCP message error: {e}".encode()})
+                except Exception:
+                    pass
+            return
+    # Everything else goes to FastAPI
+    await _fastapi_app(scope, receive, send)
 
-
-app.mount("/mcp", McpAsgiApp(mcp_server, sse_transport))
+# Replace app for uvicorn — uvicorn loads main:app, so we reassign
+app = mcp_wrapped_app
 
 async def auto_deposit_worker():
     """
