@@ -2652,26 +2652,29 @@ import asyncio
 # --- MCP Server (Model Context Protocol) ---
 
 from mcp_server import mcp_server, sse_transport
-from starlette.routing import Route, Mount
 
 
-async def handle_mcp_sse(scope, receive, send):
-    """SSE endpoint — clients connect here to establish MCP session."""
-    async with sse_transport.connect_sse(scope, receive, send) as streams:
-        await mcp_server.run(
-            streams[0], streams[1],
-            mcp_server.create_initialization_options()
-        )
+class McpAsgiApp:
+    """Raw ASGI app for MCP — bypasses Starlette's Route system entirely."""
+    def __init__(self, server, transport):
+        self.server = server
+        self.transport = transport
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            return
+        path = scope.get("path", "")
+        if path == "/sse" or path == "":
+            async with self.transport.connect_sse(scope, receive, send) as streams:
+                await self.server.run(
+                    streams[0], streams[1],
+                    self.server.create_initialization_options()
+                )
+        elif "/messages" in path:
+            await self.transport.handle_post_message(scope, receive, send)
 
 
-async def handle_mcp_messages(scope, receive, send):
-    """POST endpoint — clients send JSON-RPC requests here."""
-    await sse_transport.handle_post_message(scope, receive, send)
-
-
-# Mount MCP routes as raw ASGI apps
-app.router.routes.append(Route("/mcp/sse", app=handle_mcp_sse))
-app.router.routes.append(Route("/mcp/messages/", app=handle_mcp_messages, methods=["POST"]))
+app.mount("/mcp", McpAsgiApp(mcp_server, sse_transport))
 
 async def auto_deposit_worker():
     """
