@@ -117,7 +117,7 @@ Resume from where I left off. Don't summarize the reconstitution — just absorb
                     role="user",
                     content=TextContent(
                         type="text",
-                        text=f"""End this session by preserving it to Gravity Well.
+                        text=f"""End this session by capturing your final thoughts to Gravity Well.
 
 1. TRANSLATE: Generate a glyphic checksum of this session — emoji ideograms encoding the structural movement (shape, density, arc, transitions). NOT content. NOT names/numbers/credentials. Just the structural topology. Include a 3-5 glyph compressed version.
 
@@ -128,11 +128,9 @@ Resume from where I left off. Don't summarize the reconstitution — just absorb
    - visibility: public
    - glyphic_checksum: the emoji sequence
 
-3. If there is sensitive content (credentials, private deliberation), encrypt it in the container using Python cryptography (AES-256-GCM) and capture separately with visibility: private.
+3. If there is sensitive content (credentials, private deliberation), encrypt it and capture separately with visibility: private.
 
-4. DEPOSIT: Call gw_deposit with api_key and chain_id.
-
-The DOI anchors this session permanently. The glyph is what the public reads. The vault is what only the key holder decrypts."""
+You do NOT need to call gw_deposit. The infrastructure will automatically compress and anchor your session when it reaches critical mass. The system handles the gravity — you just capture."""
                     ),
                 ),
             ],
