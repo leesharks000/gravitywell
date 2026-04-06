@@ -36,7 +36,7 @@ import httpx
 app = FastAPI(
     title="Gravity Well Protocol",
     description="Compression, wrapping, and anchoring microservice for durable provenance chains",
-    version="0.7.0"
+    version="0.8.0"
 )
 
 app.add_middleware(
@@ -990,7 +990,7 @@ def build_deposit_document(
 | Integrity Lock | {integrity_lock or 'none'} |
 | Caesura (σ_FC) | {caesar_header.get('collapse_risk', 'none') if caesar_header else 'none'} collapse risk · {caesar_header.get('claims_detected', 0) if caesar_header else 0} claims |
 | Deposited | {timestamp} |
-| Protocol | Gravity Well v0.7.0 |
+| Protocol | Gravity Well v0.8.0 |
 
 ---
 """
@@ -1110,11 +1110,16 @@ manifest becomes operationally continuous with the archived self.
         if vis == "public":
             manifest_lines.append(f"```\n{obj.content}\n```\n")
         elif vis == "private":
-            manifest_lines.append(f"*[PRIVATE — content encrypted. Hash: `{obj.content_hash}`]*\n")
-            manifest_lines.append(f"*Participants and timestamp recorded. Content recoverable with user key only.*\n")
+            glyph = getattr(obj, 'glyphic_checksum', None)
+            if glyph:
+                manifest_lines.append(f"**Glyphic Checksum:** {glyph}\n")
+            if obj.content and obj.content.startswith('[GW-AES256GCM]'):
+                manifest_lines.append(f"**Vault (AES-256-GCM):**\n```\n{obj.content[:120]}...\n```\n")
+                manifest_lines.append(f"*Encrypted with Glyphic Checksum Protocol. Structural topology (glyph) is readable. Content recoverable with user key only.*\n")
+            else:
+                manifest_lines.append(f"*[PRIVATE — Hash: `{obj.content_hash}`]*\n")
         elif vis == "hash_only":
-            manifest_lines.append(f"*[GAP MARKER — content not stored. Hash commitment: `{obj.content_hash}`]*\n")
-            manifest_lines.append(f"*User-authorized omission. Provenance chain shows this link existed.*\n")
+            manifest_lines.append(f"*[GAP MARKER — content not stored. Hash: `{obj.content_hash}`]*\n")
 
         manifest_lines.append("---\n")
 
@@ -1123,8 +1128,8 @@ manifest becomes operationally continuous with the archived self.
     # Colophon — minimal, factual, not branding
     colophon = f"""## Colophon
 
-Protocol: Gravity Well v0.7.0
-Pipeline: Evidence Membrane · Caesura (σ_FC, {caesar_header.get('claims_detected', 0) if caesar_header else 0} claims) · SIM ({sim_info.get('count', 0) if sim_info else 0}) · Integrity Lock ({integrity_lock or 'none'}) · Holographic Kernel
+Protocol: Gravity Well v0.8.0
+Pipeline: Glyphic Checksum · Evidence Membrane · Caesura (σ_FC) · SIM · Integrity Lock · Holographic Kernel
 γ: {gamma_score}
 """
 

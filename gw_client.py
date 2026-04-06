@@ -238,7 +238,8 @@ class GravityWellClient:
                 visibility: str = "public",
                 content_type: str = "text",
                 parent_object_id: Optional[str] = None,
-                metadata: Optional[dict] = None) -> dict:
+                metadata: Optional[dict] = None,
+                glyphic_checksum: Optional[str] = None) -> dict:
         """
         Capture content to a chain.
 
@@ -246,14 +247,19 @@ class GravityWellClient:
           "public"   — stored in plaintext, included in deposits
           "private"  — encrypted client-side before sending, server sees only ciphertext
           "hash_only" — only hash sent, content never leaves client
+
+        glyphic_checksum:
+          Emoji ideographic translation of the content's structural movement.
+          For private captures, generate the glyph FROM PLAINTEXT before encryption.
+          The glyph travels alongside the ciphertext as the readable public layer.
+          Use generate_glyph_prompt() to get the LLM prompt for translation.
         """
         # Handle encryption
         stored_content = content
         if visibility == "private":
             stored_content = self.encrypt(content)
         elif visibility == "hash_only":
-            # Content never sent — just the hash
-            stored_content = content  # the server will hash it and discard
+            stored_content = content
 
         payload = {
             "chain_id": chain_id,
@@ -263,6 +269,8 @@ class GravityWellClient:
             "parent_object_id": parent_object_id,
             "metadata": metadata or {},
         }
+        if glyphic_checksum:
+            payload["glyphic_checksum"] = glyphic_checksum
 
         r = requests.post(f"{self.base_url}/v1/capture",
                           headers=self._headers(), json=payload)
@@ -411,6 +419,85 @@ class GravityWellClient:
 
 
 # === Standalone Quick Start ===
+
+    # === Glyphic Checksum ===
+
+    @staticmethod
+    def glyph_prompt(content: str, previous_glyph: Optional[str] = None) -> str:
+        """
+        Generate the prompt that an LLM uses to translate content into
+        a glyphic checksum. Pass this prompt to your LLM (Claude, ChatGPT,
+        Kimi, etc.) and use the response as the glyphic_checksum parameter
+        in capture().
+
+        The translating LLM already has the content — no new trust boundary.
+
+        Usage:
+            prompt = gw.glyph_prompt(session_content, previous_glyph="🪞🔧💎")
+            glyph = my_llm.complete(prompt)  # call your LLM
+            gw.capture(chain_id, session_content, visibility="private",
+                       glyphic_checksum=glyph)
+        """
+        ratchet = ""
+        if previous_glyph:
+            ratchet = f"""
+PREVIOUS GLYPH (chain context — condition your translation on this):
+{previous_glyph}
+
+Let the previous glyph's vocabulary drift influence yours. Similar
+structural patterns should use similar (not identical) glyphs.
+"""
+
+        return f"""GLYPH TRANSLATION PROTOCOL v0.1
+
+Translate the structural movement of the following content into an
+ideographic glyph sequence using emoji.
+
+RULES:
+1. Encode SHAPE, not content. Represent the arc of reasoning —
+   problems, solutions, transitions, density shifts, breakthroughs —
+   not specific topics, names, numbers, or tokens.
+
+2. Someone reading the glyphs should understand "this started with
+   an audit, hit failures, achieved a breakthrough" — but NOT
+   "this was about MCP servers" or "they used API key gw_PJL..."
+
+3. Use emoji as ideograms. Each glyph cluster = a structural moment.
+   Produce 10-50 glyphs depending on content length and complexity.
+
+4. Mark transitions with → (direction change). Mark density with
+   clustering. Mark weight with glyph character (mechanical /
+   institutional / elemental / abstract).
+
+5. FORBIDDEN: Never encode specific names, numbers, credentials,
+   URLs, file paths, or identifiable tokens.
+
+6. After the full glyph, provide a 3-5 glyph compressed version
+   that captures the essential arc.
+{ratchet}
+OUTPUT FORMAT:
+Full: [your glyph sequence here]
+Compressed: [3-5 glyph essence]
+
+CONTENT TO TRANSLATE:
+{content[:8000]}"""
+
+    def capture_with_glyph(self, chain_id: str, content: str,
+                           glyph: str,
+                           visibility: str = "private",
+                           content_type: str = "text") -> dict:
+        """
+        Convenience method: capture encrypted content with its glyphic checksum.
+        The glyph is stored as metadata alongside the ciphertext.
+        """
+        return self.capture(
+            chain_id=chain_id,
+            content=content,
+            visibility=visibility,
+            content_type=content_type,
+            glyphic_checksum=glyph,
+        )
+
 
 if __name__ == "__main__":
     import sys
