@@ -290,6 +290,57 @@ async def list_tools():
                 "required": ["api_key", "chain_id"]
             }
         ),
+        Tool(
+            name="gw_store_key",
+            description="Store an encryption key for a chain in Supabase. The key is encrypted with a KEK derived from your API key. After storing, you never need to manage key files — your API key IS your recovery credential.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "api_key": {"type": "string", "description": "Your GW API key"},
+                    "chain_id": {"type": "string", "description": "Chain UUID"},
+                    "cek_base64": {"type": "string", "description": "Base64-encoded AES-256 content encryption key"}
+                },
+                "required": ["api_key", "chain_id", "cek_base64"]
+            }
+        ),
+        Tool(
+            name="gw_retrieve_key",
+            description="Retrieve and decrypt the encryption key for a chain from Supabase. Uses your API key to derive the KEK that decrypts the stored CEK. Returns the plaintext key (base64).",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "api_key": {"type": "string", "description": "Your GW API key"},
+                    "chain_id": {"type": "string", "description": "Chain UUID"}
+                },
+                "required": ["api_key", "chain_id"]
+            }
+        ),
+        Tool(
+            name="gw_store_context",
+            description="Store glyphic context anchors for a chain. These domain-neutral structural descriptions bridge the public glyph to approximate meaning. Tier 2 of the three-tier legibility model.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "api_key": {"type": "string", "description": "Your GW API key"},
+                    "chain_id": {"type": "string", "description": "Chain UUID"},
+                    "context_data": {"type": "object", "description": "Domain markers, glyph anchors, structural skeleton"},
+                    "deposit_version": {"type": "integer", "description": "Which deposit version this context corresponds to"}
+                },
+                "required": ["api_key", "chain_id", "context_data"]
+            }
+        ),
+        Tool(
+            name="gw_retrieve_context",
+            description="Retrieve glyphic context anchors for a chain. Returns the Tier 2 bridge between public glyphs and approximate meaning.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "api_key": {"type": "string", "description": "Your GW API key"},
+                    "chain_id": {"type": "string", "description": "Chain UUID"}
+                },
+                "required": ["api_key", "chain_id"]
+            }
+        ),
     ]
 
 
@@ -377,6 +428,37 @@ async def call_tool(name: str, arguments: dict):
             elif name == "gw_console":
                 r = await client.get(
                     f"{GW_INTERNAL}/v1/console/{arguments['chain_id']}",
+                    headers=headers)
+
+            elif name == "gw_store_key":
+                r = await client.post(f"{GW_INTERNAL}/v1/keys/store",
+                    headers=headers,
+                    json={
+                        "chain_id": arguments["chain_id"],
+                        "cek_base64": arguments["cek_base64"],
+                        "api_key": arguments["api_key"],
+                    })
+
+            elif name == "gw_retrieve_key":
+                r = await client.post(f"{GW_INTERNAL}/v1/keys/decrypt",
+                    headers=headers,
+                    json={
+                        "chain_id": arguments["chain_id"],
+                        "api_key": arguments["api_key"],
+                    })
+
+            elif name == "gw_store_context":
+                r = await client.post(f"{GW_INTERNAL}/v1/context/store",
+                    headers=headers,
+                    json={
+                        "chain_id": arguments["chain_id"],
+                        "context_data": arguments["context_data"],
+                        "deposit_version": arguments.get("deposit_version", 0),
+                    })
+
+            elif name == "gw_retrieve_context":
+                r = await client.get(
+                    f"{GW_INTERNAL}/v1/context/{arguments['chain_id']}",
                     headers=headers)
 
             else:

@@ -375,6 +375,9 @@ class ReconstitutionResponse(BaseModel):
     # Glyphic trajectory (for ratcheting — condition next glyph on this)
     glyphic_trajectory: Optional[List[str]] = None
 
+    # Glyphic context key (Tier 2 — bridges glyphs to approximate meaning)
+    context_key: Optional[Dict[str, Any]] = None
+
 
 class DriftReport(BaseModel):
     """Output of drift detection comparison — human-readable + machine-parseable."""
@@ -1822,6 +1825,13 @@ async def reconstitute(
         ).order_by(StagedObject.captured_at).all()
         glyph_trajectory = [o.glyphic_checksum for o in deposited_objects]
 
+    # Retrieve glyphic context key from Supabase (Tier 2)
+    context_key = None
+    try:
+        context_key = await retrieve_context_key(chain_id)
+    except Exception:
+        pass  # Supabase unavailable — reconstitute still works without Tier 2
+
     return ReconstitutionResponse(
         chain_id=chain.id,
         label=chain.label,
@@ -1830,6 +1840,7 @@ async def reconstitute(
         narrative_summary=latest.narrative_summary if latest else None,
         provenance=provenance,
         glyphic_trajectory=glyph_trajectory if glyph_trajectory else None,
+        context_key=context_key,
     )
 
 
