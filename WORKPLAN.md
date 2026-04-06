@@ -2,13 +2,13 @@
 ## Compression, Wrapping, Anchoring, and Zero-Knowledge Continuity
 
 **Last updated:** 2026-04-06
-**Version:** 0.7.0 → 0.8.0 target
+**Version:** 0.8.1 (deployed)
 **Repository:** https://github.com/leesharks000/gravitywell
 **Live:** https://gravitywell-1.onrender.com
 
 ---
 
-## Current State (v0.7.0)
+## Current State (v0.8.1)
 
 ### What's operational
 

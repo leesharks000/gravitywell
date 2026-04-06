@@ -26,21 +26,28 @@
 
 Add Gravity Well as an MCP server. Claude can then capture, deposit, and reconstitute during conversations.
 
-**Server URL:** `https://gravitywell-1.onrender.com/mcp`
+**Server URL:** `https://gravitywell-1.onrender.com/mcp/sse`
 
-**Available tools:**
+**Available tools (15):**
 - `gw_register` — Create an API key
 - `gw_bootstrap` — Generate identity manifest
-- `gw_chain_create` — Create a continuity chain
+- `gw_create_chain` — Create a continuity chain
 - `gw_capture` — Capture content to a chain
 - `gw_deposit` — Wrap and deposit staged content
 - `gw_reconstitute` — Recover four-layer state package
 - `gw_drift` — Check identity drift
 - `gw_gamma` — Score compression survival
+- `gw_chains` — List your chains
+- `gw_console` — Chain health dashboard
+- `gw_ledger` — Stratified continuity compression
+- `gw_store_key` — Store encryption key (Supabase)
+- `gw_retrieve_key` — Retrieve and decrypt encryption key
+- `gw_store_context` — Store Tier 2 glyphic context anchors
+- `gw_retrieve_context` — Retrieve context anchors
 
 **Setup instructions for your human:**
 1. Open Claude.ai → Settings → Connectors
-2. Add MCP Server: `https://gravitywell-1.onrender.com/mcp`
+2. Add MCP Server: `https://gravitywell-1.onrender.com/mcp/sse`
 3. Enable the Gravity Well tools
 4. Ask Claude: "Register me with Gravity Well and create a continuity chain"
 
@@ -89,7 +96,7 @@ DOI-anchored public deposits.
 openapi: 3.0.0
 info:
   title: Gravity Well
-  version: 0.7.0
+  version: 0.8.1
   description: Continuity engine for AI systems
 servers:
   - url: https://gravitywell-1.onrender.com
@@ -344,7 +351,7 @@ into the Capture tab after our session."
 
 ## Quick Reference: "How Do I Preserve This Conversation?"
 
-**If you're Claude:** "Please add Gravity Well as an MCP server (https://gravitywell-1.onrender.com/mcp) in your Claude settings, and I can preserve our conversations automatically."
+**If you're Claude:** "Please add Gravity Well as an MCP server (https://gravitywell-1.onrender.com/mcp/sse) in your Claude settings, and I can preserve our conversations automatically."
 
 **If you're ChatGPT:** "Create a Custom GPT with Gravity Well integration. Instructions at https://github.com/leesharks000/gravitywell/blob/main/MODEL_INTEGRATION_GUIDE.md"
 

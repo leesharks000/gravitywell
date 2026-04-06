@@ -24,9 +24,10 @@ Private content is encrypted on the client machine before transmission. The serv
 
 ### Key Storage
 
-**Current (v0.8.0):** Keys stored as files at `~/.gravitywell/encryption.key`. The user is responsible for backup and security.
+**Current (v0.8.1):** Two key storage methods available:
 
-**Planned (v0.9.0):** Keys stored per-chain in Supabase, encrypted with a key-encryption-key (KEK) derived from the API key via PBKDF2. The server stores encrypted keys but cannot decrypt them without the API key.
+1. **Local file:** Keys stored at `~/.gravitywell/encryption.key`. User responsible for backup.
+2. **Supabase (recommended):** Keys stored per-chain in Supabase, encrypted with a key-encryption-key (KEK) derived from the API key via PBKDF2. The server stores encrypted keys but cannot decrypt them without the API key. Use `gw_store_key` / `gw_retrieve_key` to manage.
 
 ```
 API key (user holds)
@@ -105,7 +106,7 @@ API keys are generated using `secrets.token_urlsafe(32)`, producing 256 bits of 
 
 ### Key Storage (Server-Side)
 
-API keys are stored in the PostgreSQL database. They are NOT hashed (this is a known limitation — hashing would require a lookup-by-hash mechanism). The key is the authentication credential.
+API keys are hashed (SHA-256) before storage in the PostgreSQL database. The server stores only the hash — the plaintext key is returned once at creation and cannot be retrieved again. Authentication works by hashing the presented key and comparing against stored hashes.
 
 ### Key Revocation
 
@@ -172,3 +173,5 @@ Do not report security issues via GitHub Issues (public).
 | 2026-04-06 | First encrypted DOI deposit (10.5281/zenodo.19433483) |
 | 2026-04-06 | First glyphic DOI deposit (10.5281/zenodo.19433865) |
 | 2026-04-06 | SECURITY.md created |
+| 2026-04-06 | v0.8.1: Async auto-deposit, MCP prompt simplification |
+| 2026-04-06 | SECURITY.md corrected: API keys confirmed hashed (SHA-256), Supabase key storage confirmed current |

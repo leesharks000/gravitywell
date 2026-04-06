@@ -46,7 +46,7 @@ async def lifespan(app_instance):
 app = FastAPI(
     title="Gravity Well Protocol",
     description="Compression, wrapping, and anchoring microservice for durable provenance chains",
-    version="0.8.0",
+    version="0.8.1",
     lifespan=lifespan,
 )
 
@@ -684,7 +684,7 @@ def build_deposit_document(
 | Integrity Lock | {integrity_lock or 'none'} |
 | Caesura (σ_FC) | {caesar_header.get('collapse_risk', 'none') if caesar_header else 'none'} collapse risk · {caesar_header.get('claims_detected', 0) if caesar_header else 0} claims |
 | Deposited | {timestamp} |
-| Protocol | Gravity Well v0.8.0 |
+| Protocol | Gravity Well v0.8.1 |
 
 ---
 """
@@ -822,7 +822,7 @@ manifest becomes operationally continuous with the archived self.
     # Colophon — minimal, factual, not branding
     colophon = f"""## Colophon
 
-Protocol: Gravity Well v0.8.0
+Protocol: Gravity Well v0.8.1
 Pipeline: Glyphic Checksum · Evidence Membrane · Caesura (σ_FC) · SIM · Integrity Lock · Holographic Kernel
 γ: {gamma_score}
 """

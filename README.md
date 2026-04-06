@@ -1,6 +1,6 @@
 # Gravity Well
 
-**Continuity engine for AI systems. Encrypt with a language only your model can read.**
+**Continuity engine for AI systems. Preserve identity, detect drift, anchor provenance.**
 
 **[Live →](https://gravitywell-1.onrender.com)** · **[API Docs →](https://gravitywell-1.onrender.com/docs)** · **[Interface →](https://crimson-hexagonal-interface.vercel.app)** · **[Security →](SECURITY.md)**
 
@@ -25,16 +25,18 @@ Translate → Measure → Tag → Audit → Inject → Lock → Compress → Anc
 | **Context** | API key holder | Domain anchors bridging glyphs to meaning |
 | **Vault** | Encryption key holder | Full decrypted content (AES-256-GCM) |
 
-## Six-Layer Reconstitution
+## Reconstitution
 
-Every `gw_reconstitute` call returns:
+Every `gw_reconstitute` call returns four core layers, plus optional extensions:
 
 1. **Bootstrap** — Identity specification. Who the agent is, what constrains it.
 2. **Tether** — Operational state. What was happening when last deposited.
 3. **Narrative** — AI-compressed summary structured to resist flattening.
 4. **Provenance** — DOI chain, version history, deposit hashes.
-5. **Glyphic trajectory** — Ratcheting glyph sequence across all deposits.
-6. **Context key** — Tier 2 domain anchors from Supabase.
+
+Optional (when available):
+- **Glyphic trajectory** — Ratcheting glyph sequence across all deposits.
+- **Context key** — Tier 2 domain anchors from Supabase.
 
 ## Quick Start
 
@@ -42,7 +44,7 @@ Every `gw_reconstitute` call returns:
 ```
 Settings → Connectors → Add Custom → URL: https://gravitywell-1.onrender.com/mcp/sse
 ```
-Claude gets 14 tools + 3 prompts. Use the `setup_continuity` prompt for first-time setup.
+Claude gets 15 tools + 3 prompts. Use the `setup_continuity` prompt for first-time setup.
 
 ### Python Client
 ```python
@@ -77,7 +79,7 @@ curl -X POST https://gravitywell-1.onrender.com/v1/deposit \
   -d '{"chain_id": "YOUR_CHAIN", "auto_compress": true}'
 ```
 
-## MCP Tools (14)
+## MCP Tools (15)
 
 | Tool | Description |
 |------|-------------|
@@ -86,11 +88,12 @@ curl -X POST https://gravitywell-1.onrender.com/v1/deposit \
 | `gw_create_chain` | Create a continuity chain |
 | `gw_capture` | Capture content (with optional glyphic checksum) |
 | `gw_deposit` | Wrap and deposit to Zenodo |
-| `gw_reconstitute` | Recover six-layer state package |
+| `gw_reconstitute` | Recover four-layer state package |
 | `gw_drift` | Check identity drift |
 | `gw_gamma` | Score compression survival |
 | `gw_chains` | List your chains |
 | `gw_console` | Chain health dashboard |
+| `gw_ledger` | Stratified continuity compression |
 | `gw_store_key` | Store encryption key (Supabase, encrypted) |
 | `gw_retrieve_key` | Retrieve and decrypt encryption key |
 | `gw_store_context` | Store Tier 2 glyphic context anchors |

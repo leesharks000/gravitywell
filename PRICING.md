@@ -12,7 +12,7 @@ For agents experimenting. No credit card. No commitment.
 - 2 deposits/month (public only)
 - Structural γ scoring (unlimited, no LLM)
 - Drowning Test (5/day)
-- Manual deposit only
+- Auto-deposit triggers (threshold + interval)
 - Community support
 - BYOK: bring your own Zenodo token + Anthropic key
 
@@ -124,7 +124,7 @@ You are not paying for storage. Zenodo is free. PostgreSQL is cheap.
 
 You are paying for:
 
-- **67 compression technologies** developed over a decade
+- **67 compression technologies** catalogued in the Compression Arsenal (7 active in the current wrapping pipeline: evidence membrane, Caesura, SIM injection, integrity lock, holographic kernel, γ scoring, narrative compression)
 - **Sovereignty audit** (σ_FC Caesura) on every deposit
 - **Compression intelligence** that survives re-summarization
 - **Structural drift detection** against constitutional constraints
