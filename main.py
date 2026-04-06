@@ -1694,6 +1694,29 @@ async def capture(
             ).order_by(StagedObject.captured_at).all()
 
             if auto_objects:
+                # PLAINTEXT PROTECTION: skip auto-deposit if zenodo chain has unencrypted private content
+                auto_policy = getattr(chain, 'anchor_policy', 'zenodo')
+                if auto_policy == "zenodo":
+                    has_plaintext_private = any(
+                        getattr(o, 'visibility', 'public') == 'private'
+                        and o.content
+                        and not o.content.startswith('[GW-AES256GCM]')
+                        for o in auto_objects
+                    )
+                    if has_plaintext_private:
+                        auto_deposit_result = {
+                            "triggered": True, "executed": False,
+                            "reason": "BLOCKED: unencrypted private content cannot be deposited to Zenodo. "
+                                      "Use Python client with encryption for private captures.",
+                        }
+                        return CaptureResponse(
+                            object_id=obj_id, chain_id=request.chain_id,
+                            content_hash=chash, captured_at=now.isoformat(),
+                            visibility=request.visibility,
+                            staged_count=staged_count,
+                            auto_deposit=auto_deposit_result,
+                        )
+
                 auto_version = chain.latest_version + 1
 
                 # Get the most recent bootstrap manifest from previous deposits
@@ -1848,6 +1871,31 @@ async def deposit(
 
     if not objects:
         raise HTTPException(status_code=400, detail="No staged objects to deposit.")
+
+    # === PLAINTEXT PROTECTION ===
+    # Zenodo deposits are permanent and public. If private content exists
+    # and is NOT encrypted, refuse to deposit. This prevents accidentally
+    # publishing credentials, private deliberation, or session logs
+    # to a permanent DOI that cannot be retracted.
+    policy = getattr(chain, 'anchor_policy', 'zenodo')
+    if policy == "zenodo":
+        plaintext_private = [
+            obj.id[:12] for obj in objects
+            if getattr(obj, 'visibility', 'public') == 'private'
+            and obj.content
+            and not obj.content.startswith('[GW-AES256GCM]')
+        ]
+        if plaintext_private:
+            raise HTTPException(status_code=422, detail={
+                "message": "SAFETY: Cannot deposit unencrypted private content to Zenodo.",
+                "reason": "Zenodo deposits are permanent and public. Private content must be "
+                          "encrypted with the Python client (AES-256-GCM) before capture. "
+                          "The server received plaintext marked 'private' — depositing this "
+                          "would permanently publish it with a DOI that cannot be retracted.",
+                "affected_objects": plaintext_private,
+                "fix": "Use gw_client.py with visibility='private' — it encrypts before capture. "
+                       "Or re-capture with visibility='public' if the content is not sensitive.",
+            })
 
     # === BOOTSTRAP: architectural, not agent-dependent ===
     # If client provides bootstrap, use it and update the chain's stored copy.
@@ -2818,6 +2866,18 @@ async def auto_deposit_worker():
 
                         if not staged:
                             continue
+
+                        # PLAINTEXT PROTECTION: skip if zenodo chain has unencrypted private content
+                        if getattr(chain, 'anchor_policy', 'zenodo') == "zenodo":
+                            has_plaintext = any(
+                                getattr(o, 'visibility', 'public') == 'private'
+                                and o.content
+                                and not o.content.startswith('[GW-AES256GCM]')
+                                for o in staged
+                            )
+                            if has_plaintext:
+                                print(f"[auto-deposit-worker] BLOCKED chain {chain.id}: unencrypted private content on zenodo chain")
+                                continue
 
                         # Execute deposit
                         version = chain.latest_version + 1

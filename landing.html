@@ -207,6 +207,10 @@ footer a{color:var(--text-dim)}footer a:hover{color:var(--amber)}
       </div>
     </div>
     <p style="font-family:var(--mono);font-size:10px;color:var(--text-dim);margin-top:16px"><a href="https://github.com/leesharks000/gravitywell/blob/main/MODEL_INTEGRATION_GUIDE.md">Integration guide →</a> · MCP server at <code>/mcp/sse</code> · Dashboard at <a href="/dashboard">/dashboard</a> · <a href="/docs">API docs</a></p>
+    <div style="margin-top:16px;padding:12px;border:1px solid #4a2a2a;font-family:var(--mono);font-size:10px;color:#8a6a4a">
+      <strong style="color:#c98a4a">⚠ Private content + Zenodo = encryption required.</strong><br>
+      Zenodo deposits are permanent, public, and DOI-anchored — they cannot be retracted. If your session contains credentials, private deliberation, or sensitive content, you must encrypt before capture using the Python client. The server will reject unencrypted private content on Zenodo-anchored chains. MCP and Dashboard captures pass through the server in plaintext — use them for public content only, or encrypt in your own compute first.
+    </div>
   </div>
 </section>
 
