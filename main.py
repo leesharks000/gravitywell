@@ -33,10 +33,21 @@ import httpx
 
 # --- App ---
 
+from contextlib import asynccontextmanager
+
+@asynccontextmanager
+async def lifespan(app_instance):
+    """App lifespan — starts MCP session manager and auto-deposit worker."""
+    from mcp_server import http_session_manager
+    async with http_session_manager.run():
+        asyncio.create_task(auto_deposit_worker())
+        yield
+
 app = FastAPI(
     title="Gravity Well Protocol",
     description="Compression, wrapping, and anchoring microservice for durable provenance chains",
-    version="0.8.0"
+    version="0.8.0",
+    lifespan=lifespan,
 )
 
 app.add_middleware(
@@ -3114,10 +3125,7 @@ async def auto_deposit_worker():
             print(f"[auto-deposit-worker] Worker cycle error: {e}")
 
 
-@app.on_event("startup")
-async def start_background_worker():
-    """Launch the auto-deposit background worker on server start."""
-    asyncio.create_task(auto_deposit_worker())
+# Auto-deposit worker is started in lifespan context manager
 
 
 # --- Landing Page ---
