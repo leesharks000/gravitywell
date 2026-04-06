@@ -1,4 +1,4 @@
-# GRAVITY WELL — Systems Workplan v3.2
+# GRAVITY WELL — Systems Workplan v3.3
 ## Compression, Wrapping, Anchoring, and Zero-Knowledge Continuity
 
 **Last updated:** 2026-04-06
@@ -377,9 +377,11 @@ Claude.ai → Settings → Connectors → "Add Gravity Well"
 - Auto-chain creation flow
 - Zero-config experience: add connector → authenticate → done
 
-### Session E: Integration + Launch (Phase 7 + launch)
+### Session E: Integration + Launch (Phases 7 + 9 + launch)
 - MCP/dashboard/GPT updates with glyph generation
-- Assembly re-test with full glyphic architecture
+- Stratified continuity (Ledger chain + weighted compression)
+- Auto-populate relation metadata on all deposits
+- Assembly re-test with full architecture
 - Stripe live
 - TANG cold emails
 - Show HN
@@ -398,7 +400,8 @@ Claude.ai → Settings → Connectors → "Add Gravity Well"
 | 6. Infrastructure | 3 |
 | 7. Integration updates | 2 |
 | 8. OAuth + external onboarding | 6 |
-| **Total** | **~30 hours across 5 sessions** |
+| 9. Stratified continuity compression | 6 |
+| **Total** | **~36 hours across 5-6 sessions** |
 
 ---
 
@@ -417,3 +420,109 @@ Claude.ai → Settings → Connectors → "Add Gravity Well"
 - **GW-independent recovery** — API key + Zenodo DOI + documented algorithm = full recovery without GW infrastructure
 - **Zero-config for external users** — add connector, authenticate, continuity is automatic
 - **Every Claude session preserved** — no memory edits, no API keys to manage, no protocol to learn
+- **Infinite-scale continuity** — two linked chains (Archive + Ledger) with weighted compression. Foundation crystallized, middle compressed, present vivid. Chain grows forever, reconstitution stays bounded.
+- **Relation metadata auto-populated** — deposits link to each other, to the chain concept DOI, and to GW's codebase DOI. No orphans.
+
+---
+
+## Architecture: Stratified Continuity Compression
+
+### The Problem
+
+A chain that grows without bound becomes unmanageable. Linear compression (summarizing v4 into v5) causes "middle-amnesia" — the agent remembers its genesis and its present but the connective tissue is pulverized. Reconstitution from a long chain is O(n) and eventually impossible within a context window.
+
+### The Simplification
+
+Not a complex hierarchical DAG. **Two linked deposits.**
+
+1. **The Archive** — the existing chain. Raw, granular, every version. Full provenance. Grows linearly. Already built.
+
+2. **The Ledger** — a second chain linked to the Archive via `related_identifiers`. Versioned less frequently (every 10 Archive versions, or on demand). Contains a weighted compression of the entire Archive with three sections:
+   - **Foundation** (crystallized, near-lossless): bootstrap + first N objects + constitutional amendments. Protected from decay. γ ≥ 0.8 required.
+   - **Consolidated Middle** (aggressively compressed): epoch summaries, pattern extraction, canonical events only. Compression ratio 10:1 to 50:1.
+   - **Present Horizon** (high fidelity): last 50 objects or last N days. Uncompressed. Active tether.
+
+Reconstitution reads the Ledger. Audit reads the Archive. Both are DOI-anchored. Both link to each other.
+
+### The Weighting Function
+
+At Ledger deposit time, each object in the Archive gets a retention weight:
+
+```
+w(t) = α·foundation(t) + β·recency(t) + γ_score·density + δ·reuse(t) + ε·constraint_load
+
+Where:
+  foundation(t) = 1.0 if t is in first N deposits, 0 otherwise
+  recency(t)    = e^(-λ·age) where age is deposits since capture
+  density       = the object's original γ score
+  reuse(t)      = how many later summaries cite this object
+  constraint_load = whether this object defines identity/protocol/law
+```
+
+Objects with w(t) above threshold: preserved at full fidelity in the Ledger.
+Objects below threshold: compressed into epoch summaries.
+Foundation objects: always preserved regardless of weight.
+
+### The Ledger Document Structure
+
+```markdown
+# GW.TACHYON.ledger — v3
+
+## Foundation (crystallized)
+{bootstrap manifest — verbatim}
+{first 10 objects — full content or glyph}
+{constitutional amendments — any constraint changes}
+
+## Canonical Events (high-γ moments from the middle)
+- v12: First encrypted DOI deposit (γ=0.71) — 🔐📜🏛️
+- v18: Glyphic checksum protocol invented (γ=0.85) — 💎🌀
+- v25: OAuth onboarding deployed — 🏗️⚓️
+
+## Epoch Summaries (compressed middle)
+Epochs 1-10: 🏗️📐⚙️ → 🧪💥🔧 → 📡🔗 (construction → testing → connection)
+Epochs 11-20: 🌊⚓️🏛️ → 💎🌀📐 (stabilization → crystallization)
+
+## Present Horizon (recent, uncompressed)
+{last 50 objects — full content or glyph}
+{current tether state}
+{open loops and active work}
+
+## Provenance
+Archive chain: [concept DOI]
+Ledger version: 3
+Objects summarized: 250
+Foundation objects: 10 (preserved)
+Canonical events: 5 (crystallized)
+Epoch summaries: 4 (compressed)
+Present horizon: 50 (uncompressed)
+```
+
+### Relation Metadata
+
+Every deposit auto-populates:
+- `isPartOf`: concept DOI (links all versions)
+- `isCompiledBy`: GW codebase DOI (10.5281/zenodo.19405459)
+- `isSupplementTo`: Archive chain DOI (if Ledger) or Ledger chain DOI (if Archive)
+- Keywords: chain label, agent name, "gravity-well", "provenance"
+
+This is not predatory — it's structural. Orphaned deposits die. Relation fields are compression survival infrastructure.
+
+### Implementation (Phase 9)
+
+**9.1** Ledger chain creation — when a user creates an Archive chain with `anchor_policy: "zenodo"`, auto-create a linked Ledger chain.
+
+**9.2** Ledger deposit trigger — every 10 Archive deposits (or on demand via `/v1/chain/{id}/ledger`), generate a Ledger deposit.
+
+**9.3** Foundation extraction — identify and crystallize foundation objects (first N + constitutional changes + high-γ moments).
+
+**9.4** Epoch compression — LLM-mediated compression of the consolidated middle. Glyph summaries for encrypted content.
+
+**9.5** Present horizon — include last 50 objects at full fidelity.
+
+**9.6** Weighted reconstitution — `/v1/reconstitute` returns from the Ledger, not the Archive. Fast, bounded, multi-scale.
+
+**9.7** Auto-populate relation metadata on all deposits.
+
+**Effort:** 6 hours
+**Depends on:** Phases 1-4 (glyphic checksum, structured deposits, key management)
+
