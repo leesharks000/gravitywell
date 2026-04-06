@@ -140,6 +140,9 @@ class StagedObject(Base):
     # Privacy layer
     visibility = Column(String, default="public")  # public | private | hash_only
 
+    # Glyphic checksum — structural topology for zero-knowledge intelligence
+    glyphic_checksum = Column(Text, nullable=True)  # emoji ideographic translation
+
 
 class DepositRecord(Base):
     """
@@ -188,6 +191,14 @@ try:
         conn.commit()
 except Exception:
     pass  # Column already exists
+
+# Auto-migrate: add glyphic_checksum to staged_objects (added in v0.8.0)
+try:
+    with engine.connect() as conn:
+        conn.execute(text("ALTER TABLE staged_objects ADD COLUMN glyphic_checksum TEXT"))
+        conn.commit()
+except Exception:
+    pass
 
 # Auto-migrate: add auto-deposit columns to chains (added in v0.6.0)
 for col in ["auto_deposit_threshold INTEGER", "auto_deposit_interval INTEGER", "last_auto_deposit TIMESTAMP"]:
@@ -278,6 +289,7 @@ class CaptureRequest(BaseModel):
     external_id: Optional[str] = None
     thread_depth: int = 0
     visibility: Literal["public", "private", "hash_only"] = "public"
+    glyphic_checksum: Optional[str] = None  # Emoji ideographic translation of structural movement
 
 
 class CaptureResponse(BaseModel):
@@ -1021,6 +1033,18 @@ they do not inherit institutional authority over the commons deposit.
 ---
 """
 
+    # Glyphic Checksum — structural topology for zero-knowledge intelligence
+    glyph_section = ""
+    glyphs = [getattr(o, 'glyphic_checksum', None) for o in objects if getattr(o, 'glyphic_checksum', None)]
+    if glyphs:
+        combined_glyph = " → ".join(glyphs) if len(glyphs) > 1 else glyphs[0]
+        glyph_section = f"""## Glyphic Checksum
+
+{combined_glyph}
+
+---
+"""
+
     # Layer 1: Bootstrap manifest — the seed
     bootstrap_section = ""
     if bootstrap_manifest:
@@ -1104,7 +1128,7 @@ Pipeline: Evidence Membrane · Caesura (σ_FC, {caesar_header.get('claims_detect
 γ: {gamma_score}
 """
 
-    return header + kernel_section + caesura_section + bootstrap_section + narrative_section + thb_section + manifest + colophon
+    return header + kernel_section + caesura_section + glyph_section + bootstrap_section + narrative_section + thb_section + manifest + colophon
 
 
 async def auto_generate_narrative(objects: list, chain_label: str) -> str:
@@ -1663,6 +1687,7 @@ async def capture(
         platform_source=request.platform_source, external_id=request.external_id,
         gamma=calculate_gamma(request.content),
         visibility=request.visibility,
+        glyphic_checksum=request.glyphic_checksum,
     )
     db.add(obj)
     db.commit()
