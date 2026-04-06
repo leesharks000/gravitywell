@@ -303,13 +303,14 @@ const GW='https://gravitywell-1.onrender.com';
 
 function bar(label, score, weight) {
   const pct = Math.round(score * 100);
-  const contribution = (score * weight * 100).toFixed(1);
-  return `<div style="margin:6px 0">
+  const contribution = weight ? (score * weight * 100).toFixed(1) : pct;
+  const meta = weight ? `${pct}% × ${weight} = ${contribution}` : `${pct}%`;
+  return `<div style="margin:4px 0">
     <div style="display:flex;justify-content:space-between;font-family:var(--mono);font-size:10px;margin-bottom:2px">
       <span>${label}</span>
-      <span style="color:var(--text-dim)">${pct}% × ${weight} = ${contribution}</span>
+      <span style="color:var(--text-dim)">${meta}</span>
     </div>
-    <div style="background:var(--bg);height:6px;border:1px solid var(--border);overflow:hidden">
+    <div style="background:var(--bg);height:5px;border:1px solid var(--border);overflow:hidden">
       <div style="width:${pct}%;height:100%;background:${pct>60?'var(--amber)':pct>30?'var(--text-dim)':'#4a2a2a'};transition:width 0.5s"></div>
     </div>
   </div>`;
@@ -324,9 +325,11 @@ async function runGamma(){
     const resp=await fetch(`${GW}/v1/gamma`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({content:input})});
     const data=await resp.json();
     const s=data.subscores||{};
+    const d=data.depth||{};
     const g=data.gamma;
     const tier=(data.survival_tier||'').toUpperCase();
     const tierColor=g>0.7?'var(--amber)':g>0.4?'var(--text)':'#8a4a4a';
+    const weakHtml=data.weak_areas&&data.weak_areas.length?`<div style="font-family:var(--mono);font-size:9px;color:#8a6a4a;margin-top:8px">${data.weak_areas.map(w=>'⚠ '+w).join('<br>')}</div>`:'';
 
     result.innerHTML=`
       <div style="display:flex;align-items:baseline;gap:12px;margin-bottom:12px">
@@ -334,15 +337,31 @@ async function runGamma(){
         <span style="font-family:var(--mono);font-size:11px;color:${tierColor};letter-spacing:2px">${tier}</span>
         ${data.penalty?`<span style="font-family:var(--mono);font-size:9px;color:var(--text-dim)">${data.penalty}</span>`:''}
       </div>
-      <div style="margin-bottom:12px">
-        ${bar('Citation density', s.citation||0, 0.30)}
-        ${bar('Structural integrity', s.structure||0, 0.25)}
-        ${bar('Argument coherence', s.coherence||0, 0.25)}
-        ${bar('Provenance markers', s.provenance||0, 0.20)}
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:12px">
+        <div>
+          <div style="font-family:var(--mono);font-size:9px;color:var(--text-dim);letter-spacing:2px;margin-bottom:6px">SURFACE</div>
+          ${bar('Citation density', s.citation||0, 0.30)}
+          ${bar('Structural integrity', s.structure||0, 0.25)}
+          ${bar('Argument coherence', s.coherence||0, 0.25)}
+          ${bar('Provenance markers', s.provenance||0, 0.20)}
+        </div>
+        <div>
+          <div style="font-family:var(--mono);font-size:9px;color:var(--text-dim);letter-spacing:2px;margin-bottom:6px">DEPTH</div>
+          ${bar('Information density', d.information_density||0)}
+          ${bar('Argument chain', d.argument_chain||0)}
+          ${bar('Citation integration', d.citation_integration||0)}
+          ${bar('Vocabulary specificity', d.vocabulary_specificity||0)}
+          ${bar('Redundancy (encoding)', d.redundancy||0)}
+        </div>
       </div>
       <div style="font-family:var(--mono);font-size:10px;color:var(--text-dim);border-top:1px solid var(--border);padding-top:8px">
-        ${data.word_count} words · ${data.recommendation||''}
-      </div>`;
+        ${data.word_count} words · ${data.unique_concepts||'?'} unique concepts · ${data.paragraphs||'?'} paragraphs · ${data.doi_count||0} DOIs · ${data.connective_count||0} connectives · depth: ${d.composite||'?'}
+      </div>
+      <div style="font-family:var(--mono);font-size:10px;color:var(--text);margin-top:6px">
+        ${data.recommendation||''}
+      </div>
+      ${weakHtml}`;
+  }catch(e){result.innerHTML='<span style="color:#8a4a4a">Error: '+e.message+'</span>'}
   }catch(e){result.innerHTML='<span style="color:#8a4a4a">Error: '+e.message+'</span>'}
 }
 
